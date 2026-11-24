@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OTT High–Low BEP NIFTY Terminal</title>
+  <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f19; --card: #131a2a; --border: #222d44;
+      --text: #e2e8f0; --muted: #94a3b8;
+      --green: #10b981; --red: #ef4444; --amber: #f59e0b; --blue: #3b82f6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 14px; max-width: 1200px; margin: auto; }
+    .topbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--border); padding: 12px 16px; border-radius: 10px; margin-bottom: 14px; }
+    .badge { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .bg-green { background: rgba(16,185,129,.18); color: var(--green); }
+    .bg-red { background: rgba(239,68,68,.18); color: var(--red); }
+    .bg-amber { background: rgba(245,158,11,.18); color: var(--amber); }
+    .bg-blue { background: rgba(59,130,246,.18); color: var(--blue); }
+    .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+    .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .val { font-size: 20px; font-weight: 700; }
+    .bar-wrap { background: #1e293b; height: 12px; border-radius: 6px; overflow: hidden; margin: 10px 0 6px; position: relative; }
+    .bar-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--amber), var(--red)); transition: width .3s; }
+    .row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #1e293b; font-size: 14px; }
+    .row:last-child { border-bottom: none; }
+    button { background: #1e293b; color: var(--text); border: 1px solid var(--border); padding: 7px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+    button:hover { background: #293548; }
+    button.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+    button.danger { background: rgba(239,68,68,.2); border-color: var(--red); color: #fca5a5; }
+    .chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+    #chartContainer { width: 100%; height: 320px; border-radius: 8px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #1e293b; }
+    th { color: var(--muted); font-weight: 600; }
+    .logs { max-height: 190px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <strong>OTT HIGH–LOW BEP TERMINAL</strong>
+      <span id="wsBadge" class="badge bg-amber" style="margin-left:8px;">CONNECTING</span>
+      <span id="expiryTag" style="font-size:12px;color:var(--muted);margin-left:8px;"></span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button onclick="postApi('/api/recalc')">Recalc Levels</button>
+      <button onclick="postApi('/api/reset_states')">Reset States</button>
+      <button class="danger" onclick="postApi('/api/squareoff')">Square Off</button>
+    </div>
+  </div>
+
+  <div class="grid-4">
+    <div class="card">
+      <div class="label">NIFTY SPOT / SYNTHETIC FUT</div>
+      <div class="val" id="spotVal">--</div>
+      <div class="label" id="atmMeta" style="margin-top:4px;">ATM: --</div>
+    </div>
+    <div class="card">
+      <div class="label">ACTIVE STRATEGY SIGNAL</div>
+      <div class="val" id="sigVal">WAITING</div>
+      <div class="label" id="stateMeta" style="margin-top:4px;">CE: IDLE | PE: IDLE</div>
+    </div>
+    <div class="card">
+      <div class="label">DAY NET P&amp;L (PAPER)</div>
+      <div class="val" id="pnlVal">₹0.00</div>
+      <div class="label" id="capMeta" style="margin-top:4px;">Capital: ₹1,00,000</div>
+    </div>
+    <div class="card">
+      <div class="label">HIGH–LOW BEP RANGE</div>
+      <div class="val" id="bepRange">--</div>
+      <div class="bar-wrap"><div class="bar-fill" id="bepBar" style="width:50%;"></div></div>
+      <div class="label" id="bepPts">BEP Width: -- pts</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="chart-head">
+      <div>
+        <div class="label">INTRADAY 3-MIN STRIKE &amp; LEVEL CHART</div>
+        <strong id="chartTitle">Loading Chart...</strong>
+      </div>
+      <div class="tabs">
+        <button id="tab_ERZ_PE" class="active" onclick="selectLeg('ERZ_PE')">ERZ PE</button>
+        <button id="tab_ERZ_CE" onclick="selectLeg('ERZ_CE')">ERZ CE</button>
+        <button id="tab_ATM_PE" onclick="selectLeg('ATM_PE')">ATM PE</button>
+        <button id="tab_ATM_CE" onclick="selectLeg('ATM_CE')">ATM CE</button>
+        <button id="tab_NIFTY_SPOT" onclick="selectLeg('NIFTY_SPOT')">NIFTY 50</button>
+      </div>
+    </div>
+    <div id="chartContainer"></div>
+  </div>
+
+  <div class="grid-3">
+    <div class="card">
+      <div class="label">ATM STRADDLE (ORDER STRIKE)</div>
+      <div id="atmBox"></div>
+    </div>
+    <div class="card">
+      <div class="label">EDGE ZONE (ERZ — SLINGSHOT TRIGGER)</div>
+      <div id="erzBox"></div>
+    </div>
+    <div class="card">
+      <div class="label">WIDE ZONE (WZR — BOUNDARY)</div>
+      <div id="wzrBox"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="label" style="margin-bottom:8px;">PAPER TRADES (TODAY)</div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Signal</th><th>Contract</th><th>Qty</th><th>Entry</th><th>SL</th><th>Target</th><th>Exit</th><th>Status</th><th>P&amp;L</th></tr>
+        </thead>
+        <tbody id="tradesBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label" style="margin-bottom:6px;">LIVE ENGINE LOGS</div>
+    <div class="logs" id="logsBox"></div>
+  </div>
+
+  <script>
+    async function postApi(url) { await fetch(url, { method: 'POST' }); }
+
+    let selectedLeg = 'ERZ_PE';
+    let latestSnapshot = null;
+    let priceLines = [];
+
+    const chartEl = document.getElementById('chartContainer');
+    const chart = LightweightCharts.createChart(chartEl, {
+      layout: { background: { color: '#0b0f19' }, textColor: '#94a3b8' },
+      grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+      timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#222d44' },
+      rightPriceScale: { borderColor: '#222d44' },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    });
+
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: '#10b981', downColor: '#ef4444',
+      borderUpColor: '#10b981', borderDownColor: '#ef4444',
+      wickUpColor: '#10b981', wickDownColor: '#ef4444',
+    });
+
+    window.addEventListener('resize', () => {
+      chart.applyOptions({ width: chartEl.clientWidth });
+    });
+
+    function clearPriceLines() {
+      priceLines.forEach(pl => candleSeries.removePriceLine(pl));
+      priceLines = [];
+    }
+
+    function addLevelLine(price, title, color, style = LightweightCharts.LineStyle.Dashed) {
+      if (!price || price <= 0) return;
+      priceLines.push(candleSeries.createPriceLine({
+        price: Number(price),
+        color: color,
+        lineWidth: 2,
+        lineStyle: style,
+        axisLabelVisible: true,
+        title: title,
+      }));
+    }
+
+    function drawReferenceLines(d) {
+      if (!d) return;
+      clearPriceLines();
+      const L = d.levels;
+      if (selectedLeg === 'ERZ_PE') {
+        document.getElementById('chartTitle').textContent = `${L.erz_pe_strike} PE (ERZ Trigger) — IV: ₹${L.erz_pe_iv}`;
+        addLevelLine(L.erz_pe_iv, `ERZ PE IV (${L.erz_pe_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
+        addLevelLine(200, 'ERZ Width (200)', '#f59e0b');
+      } else if (selectedLeg === 'ERZ_CE') {
+        document.getElementById('chartTitle').textContent = `${L.erz_ce_strike} CE (ERZ Trigger) — IV: ₹${L.erz_ce_iv}`;
+        addLevelLine(L.erz_ce_iv, `ERZ CE IV (${L.erz_ce_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
+        addLevelLine(200, 'ERZ Width (200)', '#f59e0b');
+      } else if (selectedLeg === 'ATM_PE') {
+        document.getElementById('chartTitle').textContent = `${L.atm_strike} PE (Order Strike) — Mid: ₹${L.straddle_mid}`;
+        addLevelLine(L.straddle_mid, `Straddle Mid (${L.straddle_mid})`, '#3b82f6', LightweightCharts.LineStyle.Solid);
+        addLevelLine(L.bep_points, `BEP Pts (${L.bep_points})`, '#f59e0b');
+        if (d.open_trade && d.open_trade.option_type === 'PE') {
+          addLevelLine(d.open_trade.entry_price, 'ENTRY', '#10b981');
+          addLevelLine(d.open_trade.sl_price, 'SL', '#ef4444');
+          addLevelLine(d.open_trade.target_price, 'TARGET', '#3b82f6');
+        }
+      } else if (selectedLeg === 'ATM_CE') {
+        document.getElementById('chartTitle').textContent = `${L.atm_strike} CE (Order Strike) — Mid: ₹${L.straddle_mid}`;
+        addLevelLine(L.straddle_mid, `Straddle Mid (${L.straddle_mid})`, '#3b82f6', LightweightCharts.LineStyle.Solid);
+        addLevelLine(L.bep_points, `BEP Pts (${L.bep_points})`, '#f59e0b');
+        if (d.open_trade && d.open_trade.option_type === 'CE') {
+          addLevelLine(d.open_trade.entry_price, 'ENTRY', '#10b981');
+          addLevelLine(d.open_trade.sl_price, 'SL', '#ef4444');
+          addLevelLine(d.open_trade.target_price, 'TARGET', '#3b82f6');
+        }
+      } else if (selectedLeg === 'NIFTY_SPOT') {
+        document.getElementById('chartTitle').textContent = `NIFTY 50 Spot — BEP Band: ${L.bep_lower} to ${L.bep_upper}`;
+        addLevelLine(L.bep_upper, `Upper BEP (${L.bep_upper})`, '#ef4444', LightweightCharts.LineStyle.Solid);
+        addLevelLine(L.bep_lower, `Lower BEP (${L.bep_lower})`, '#10b981', LightweightCharts.LineStyle.Solid);
+        addLevelLine(L.synthetic_future, `Synth Fut (${L.synthetic_future})`, '#3b82f6');
+      }
+    }
+
+    async function loadChartHistory(leg) {
+      try {
+        const res = await fetch(`/api/candles/${leg}`);
+        const data = await res.json();
+        if (data.bars && data.bars.length > 0) {
+          candleSeries.setData(data.bars);
+          chart.timeScale().fitContent();
+        } else {
+          candleSeries.setData([]);
+        }
+        drawReferenceLines(latestSnapshot);
+      } catch (err) {}
+    }
+
+    function selectLeg(leg) {
+      selectedLeg = leg;
+      document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+      const btn = document.getElementById(`tab_${leg}`);
+      if (btn) btn.classList.add('active');
+      loadChartHistory(leg);
+    }
+
+    function legRow(title, ltp, iv, extra="") {
+      const itm = ltp > iv && iv > 0;
+      const tag = iv === 0 ? `<span class="badge bg-blue">ZERO-IV</span>` :
+                  itm ? `<span class="badge bg-green">ITM (> ${iv})</span>` :
+                        `<span class="badge bg-red">OTM (< ${iv})</span>`;
+      return `<div class="row"><div><strong>${title}</strong><div style="font-size:11px;color:var(--muted)">${extra}</div></div><div><strong>${ltp.toFixed(2)}</strong> ${tag}</div></div>`;
+    }
+
+    loadChartHistory(selectedLeg);
+
+    const es = new EventSource('/api/stream');
+    es.onmessage = (e) => {
+      const d = JSON.parse(e.data);
+      const firstLoad = !latestSnapshot;
+      latestSnapshot = d;
+      const L = d.levels, P = d.prices;
+
+      if (firstLoad) drawReferenceLines(d);
+      if (d.live_bars && d.live_bars[selectedLeg]) {
+        candleSeries.update(d.live_bars[selectedLeg]);
+      }
+
+      const wsB = document.getElementById('wsBadge');
+      wsB.textContent = d.ws_connected ? `WS LIVE (${d.last_tick})` : `REST SYNC (${d.last_tick})`;
+      wsB.className = 'badge ' + (d.ws_connected ? 'bg-green' : 'bg-amber');
+
+      document.getElementById('expiryTag').textContent = `Expiry: ${L.expiry}`;
+      document.getElementById('spotVal').textContent = `${P.NIFTY_SPOT.toFixed(2)} / ${L.synthetic_future}`;
+      document.getElementById('atmMeta').textContent = `ATM ${L.atm_strike} (Gap: ${L.strike_gap} pts) | Mid: ${L.straddle_mid}`;
+
+      const sigEl = document.getElementById('sigVal');
+      sigEl.textContent = d.active_signal;
+      sigEl.style.color = d.active_signal === 'BUY CE' ? 'var(--green)' : d.active_signal === 'BUY PE' ? 'var(--red)' : 'var(--text)';
+      document.getElementById('stateMeta').textContent = `CE State: ${d.ce_state} | PE State: ${d.pe_state}`;
+
+      const pnlEl = document.getElementById('pnlVal');
+      pnlEl.textContent = `₹${d.net_pnl >= 0 ? '+' : ''}${d.net_pnl.toFixed(2)}`;
+      pnlEl.style.color = d.net_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+      document.getElementById('capMeta').textContent = `Virtual Capital: ₹${d.capital.toLocaleString('en-IN')}`;
+
+      document.getElementById('bepRange').textContent = `${L.bep_lower} – ${L.bep_upper}`;
+      document.getElementById('bepPts').textContent = `BEP Offset: ±${L.bep_points} pts`;
+      const pct = Math.max(0, Math.min(100, ((P.NIFTY_SPOT - L.bep_lower) / (L.bep_upper - L.bep_lower)) * 100));
+      document.getElementById('bepBar').style.width = `${pct}%`;
+
+      document.getElementById('atmBox').innerHTML =
+        legRow(`${L.atm_strike} CE`, P.ATM_CE, L.atm_ce_iv, `Mid Trigger: ${L.straddle_mid}`) +
+        legRow(`${L.atm_strike} PE`, P.ATM_PE, L.atm_pe_iv, `Mid Trigger: ${L.straddle_mid}`);
+
+      document.getElementById('erzBox').innerHTML =
+        legRow(`${L.erz_ce_strike} CE`, P.ERZ_CE, L.erz_ce_iv, `Ceiling: 200`) +
+        legRow(`${L.erz_pe_strike} PE`, P.ERZ_PE, L.erz_pe_iv, `Ceiling: 200`);
+
+      document.getElementById('wzrBox').innerHTML =
+        legRow(`${L.wzr_ce_strike} CE`, P.WZR_CE, L.wzr_ce_iv, `Wide Band: 500`) +
+        legRow(`${L.wzr_pe_strike} PE`, P.WZR_PE, L.wzr_pe_iv, `Wide Band: 500`);
+
+      document.getElementById('tradesBody').innerHTML = d.trades.map(t => `
+        <tr>
+          <td>${t.entry_time}</td>
+          <td><strong>${t.signal_type}</strong></td>
+          <td>${t.strike} ${t.option_type}</td>
+          <td>${t.qty}</td>
+          <td>${t.entry_price.toFixed(2)}</td>
+          <td>${t.sl_price.toFixed(2)}</td>
+          <td>${t.target_price.toFixed(2)}</td>
+          <td>${t.exit_price ? t.exit_price.toFixed(2) : '--'}</td>
+          <td>${t.status}${t.exit_reason ? ' ('+t.exit_reason+')' : ''}</td>
+          <td style="color:${t.pnl >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">₹${t.pnl.toFixed(2)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="10" style="color:var(--muted)">No paper trades yet today</td></tr>';
+
+      document.getElementById('logsBox').innerHTML = d.logs.map(l =>
+        `<div>[${l.ts}] <strong>${l.level}</strong>: ${l.message}</div>`
+      ).join('');
+    };
+  </script>
+</body>
+</html>
