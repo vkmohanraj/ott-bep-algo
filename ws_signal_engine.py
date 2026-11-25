@@ -177,17 +177,25 @@ class SignalEngine:
         use_abs = bool(self.cfg.get("use_absorption_filter", True))
         use_dyn_sl = bool(self.cfg.get("use_dynamic_sweep_sl", True))
 
-        if erz_pe < erz_pe_iv and self.pe_state == "IDLE":
+        ep_hist = list(self.hist_candles["ERZ_PE"])[-5:]
+        ec_hist = list(self.hist_candles["ERZ_CE"])[-5:]
+        pe_ref = round(sum(x.close for x in ep_hist) / len(ep_hist), 2) if len(ep_hist) >= 2 else erz_pe_iv
+        ce_ref = round(sum(x.close for x in ec_hist) / len(ec_hist), 2) if len(ec_hist) >= 2 else erz_ce_iv
+        pe_brk = max(pe_ref, ep_hist[-1].high) if ep_hist else erz_pe_iv
+        ce_brk = max(ce_ref, ec_hist[-1].high) if ec_hist else erz_ce_iv
+
+        if erz_pe < pe_ref and self.pe_state == "IDLE":
             self.pe_state = "ARMED_OTM"
-            self.trader.log_event("ARM", f"ERZ PE ({self.levels['erz_pe_strike']} PE) dipped OTM (< {erz_pe_iv})")
+            self.trader.log_event("ARM", f"ERZ PE ({self.levels['erz_pe_strike']} PE) compressed (< {pe_ref})")
             if self.notifier:
-                self.notifier.alert_armed("PE", self.levels["erz_pe_strike"], erz_pe, erz_pe_iv, spot, self.levels)
-        elif self.pe_state == "ARMED_OTM" and erz_pe > erz_pe_iv:
+                self.notifier.alert_armed("PE", self.levels["erz_pe_strike"], erz_pe, pe_ref, spot, self.levels)
+        elif self.pe_state == "ARMED_OTM" and erz_pe > pe_brk:
             abs_ok = (not use_abs) or self.upper_bep_absorbed
-            if abs_ok and erz_ce < erz_width and atm_pe >= straddle_mid:
+            if abs_ok and atm_pe >= straddle_mid:
                 self.pe_state = "TRIGGERED"
+                self.upper_bep_absorbed = False
                 self.active_signal = "BUY PE"
-                self.trader.log_event("SIGNAL", f"BUY PE TRIGGERED! ERZ PE reclaimed IV ({erz_pe:.2f} > {erz_pe_iv})")
+                self.trader.log_event("SIGNAL", f"BUY PE TRIGGERED! ERZ PE slingshot ({erz_pe:.2f} > {pe_brk:.2f})")
                 in_win = self._in_trade_window()
                 atm_leg = self.levels["instruments"]["ATM_PE"]
                 custom_sl = self.sweep_atm_pe_low if use_dyn_sl else None
@@ -195,19 +203,20 @@ class SignalEngine:
                 sl_p = trade["sl_price"] if trade else round(max(1.0, atm_pe - float(self.cfg.get("sl_points", 25.0))), 2)
                 tgt_p = trade["target_price"] if trade else round(atm_pe + float(self.cfg.get("target_points", 60.0)), 2)
                 if self.notifier:
-                    self.notifier.alert_signal("BUY PE", atm_leg["strike"], "PE", atm_pe, sl_p, tgt_p, qty, self.levels["erz_pe_strike"], erz_pe, erz_pe_iv, spot, bool(trade))
+                    self.notifier.alert_signal("BUY PE", atm_leg["strike"], "PE", atm_pe, sl_p, tgt_p, qty, self.levels["erz_pe_strike"], erz_pe, pe_brk, spot, bool(trade))
 
-        if erz_ce < erz_ce_iv and self.ce_state == "IDLE":
+        if erz_ce < ce_ref and self.ce_state == "IDLE":
             self.ce_state = "ARMED_OTM"
-            self.trader.log_event("ARM", f"ERZ CE ({self.levels['erz_ce_strike']} CE) dipped OTM (< {erz_ce_iv})")
+            self.trader.log_event("ARM", f"ERZ CE ({self.levels['erz_ce_strike']} CE) compressed (< {ce_ref})")
             if self.notifier:
-                self.notifier.alert_armed("CE", self.levels["erz_ce_strike"], erz_ce, erz_ce_iv, spot, self.levels)
-        elif self.ce_state == "ARMED_OTM" and erz_ce > erz_ce_iv:
+                self.notifier.alert_armed("CE", self.levels["erz_ce_strike"], erz_ce, ce_ref, spot, self.levels)
+        elif self.ce_state == "ARMED_OTM" and erz_ce > ce_brk:
             abs_ok = (not use_abs) or self.lower_bep_absorbed
-            if abs_ok and erz_pe < erz_width and atm_ce >= straddle_mid:
+            if abs_ok and atm_ce >= straddle_mid:
                 self.ce_state = "TRIGGERED"
+                self.lower_bep_absorbed = False
                 self.active_signal = "BUY CE"
-                self.trader.log_event("SIGNAL", f"BUY CE TRIGGERED! ERZ CE reclaimed IV ({erz_ce:.2f} > {erz_ce_iv})")
+                self.trader.log_event("SIGNAL", f"BUY CE TRIGGERED! ERZ CE slingshot ({erz_ce:.2f} > {ce_brk:.2f})")
                 in_win = self._in_trade_window()
                 atm_leg = self.levels["instruments"]["ATM_CE"]
                 custom_sl = self.sweep_atm_ce_low if use_dyn_sl else None
@@ -215,7 +224,7 @@ class SignalEngine:
                 sl_p = trade["sl_price"] if trade else round(max(1.0, atm_ce - float(self.cfg.get("sl_points", 25.0))), 2)
                 tgt_p = trade["target_price"] if trade else round(atm_ce + float(self.cfg.get("target_points", 60.0)), 2)
                 if self.notifier:
-                    self.notifier.alert_signal("BUY CE", atm_leg["strike"], "CE", atm_ce, sl_p, tgt_p, qty, self.levels["erz_ce_strike"], erz_ce, erz_ce_iv, spot, bool(trade))
+                    self.notifier.alert_signal("BUY CE", atm_leg["strike"], "CE", atm_ce, sl_p, tgt_p, qty, self.levels["erz_ce_strike"], erz_ce, ce_brk, spot, bool(trade))
 
         self.trader.on_tick(self.prices)
 
