@@ -92,6 +92,11 @@ def init_db(db_path: str):
             message TEXT
         )
     """)
+    for col_def in ("prev_day_mid REAL DEFAULT 0.0", "straddle_sum REAL DEFAULT 0.0"):
+        try:
+            cur.execute(f"ALTER TABLE daily_levels ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 
@@ -104,6 +109,30 @@ def fetch_prev_ohlc(headers: dict, security_id: str) -> dict:
         "securityId": str(security_id),
         "exchangeSegment": "NSE_FNO",
         "instrument": "OPTIDX",
+        "expiryCode": 0,
+        "oi": False,
+        "fromDate": from_date,
+        "toDate": to_date,
+    }
+    resp = requests.post(f"{DHAN_BASE}/charts/historical", headers=headers, json=payload, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    return {
+        "open": float(data["open"][-1]),
+        "high": float(data["high"][-1]),
+        "low": float(data["low"][-1]),
+        "close": float(data["close"][-1]),
+    }
+
+
+def fetch_spot_prev_ohlc(headers: dict) -> dict:
+    today = datetime.now(IST).date()
+    from_date = (today - timedelta(days=10)).strftime("%Y-%m-%d")
+    to_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    payload = {
+        "securityId": "13",
+        "exchangeSegment": "IDX_I",
+        "instrument": "INDEX",
         "expiryCode": 0,
         "oi": False,
         "fromDate": from_date,
@@ -192,7 +221,13 @@ def compute_and_store_levels(cfg: dict) -> dict:
     ]
     bep_points = round((max(all_8) + min(all_8)) / 2.0, 2)
     synth_fut = round(atm_strike + (ce_ohlc["close"] - pe_ohlc["close"]), 2)
-    straddle_mid = round((ce_ohlc["close"] + pe_ohlc["close"]) / 2.0, 2)
+    straddle_sum = round(ce_ohlc["close"] + pe_ohlc["close"], 2)
+    straddle_mid = round(straddle_sum / 2.0, 2)
+    try:
+        spot_ohlc = fetch_spot_prev_ohlc(headers)
+        prev_day_mid = round((spot_ohlc["high"] + spot_ohlc["low"]) / 2.0, 2)
+    except Exception:
+        prev_day_mid = round(synth_fut, 2)
 
     erz_off = int(cfg.get("erz_offset", 100))
     wzr_off = int(cfg.get("wzr_offset", 250))
@@ -229,6 +264,8 @@ def compute_and_store_levels(cfg: dict) -> dict:
         "bep_upper": round(atm_strike + bep_points, 2),
         "bep_lower": round(atm_strike - bep_points, 2),
         "straddle_mid": straddle_mid,
+        "straddle_sum": straddle_sum,
+        "prev_day_mid": prev_day_mid,
         "atm_ce_iv": atm_ce_iv,
         "atm_pe_iv": atm_pe_iv,
         "erz_ce_strike": erz_ce_strike,
@@ -245,8 +282,15 @@ def compute_and_store_levels(cfg: dict) -> dict:
     conn = sqlite3.connect(cfg["db_path"])
     cur = conn.cursor()
     cur.execute("""
-        INSERT OR REPLACE INTO daily_levels VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        INSERT OR REPLACE INTO daily_levels (
+            trade_date, expiry, atm_strike, strike_gap,
+            synthetic_future, bep_points, bep_upper, bep_lower,
+            straddle_mid, atm_ce_iv, atm_pe_iv,
+            erz_ce_strike, erz_pe_strike, erz_ce_iv, erz_pe_iv,
+            wzr_ce_strike, wzr_pe_strike, wzr_ce_iv, wzr_pe_iv,
+            instruments_json, created_at, prev_day_mid, straddle_sum
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
     """, (
         result["trade_date"], result["expiry"], result["atm_strike"], result["strike_gap"],
@@ -255,6 +299,7 @@ def compute_and_store_levels(cfg: dict) -> dict:
         result["erz_ce_strike"], result["erz_pe_strike"], result["erz_ce_iv"], result["erz_pe_iv"],
         result["wzr_ce_strike"], result["wzr_pe_strike"], result["wzr_ce_iv"], result["wzr_pe_iv"],
         json.dumps(instruments), datetime.now(IST).isoformat(),
+        result["prev_day_mid"], result["straddle_sum"],
     ))
     conn.commit()
     conn.close()

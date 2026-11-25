@@ -70,6 +70,54 @@ class SignalEngine:
         self.lower_bep_absorbed = False
         self.sweep_atm_pe_low = None
         self.sweep_atm_ce_low = None
+        self._force_resubscribe = False
+        self._rolling_atm = False
+
+    def _roll_intraday_atm(self, new_atm: int, live_fut: float):
+        try:
+            headers = get_headers(self.cfg)
+            r = requests.post(
+                "https://api.dhan.co/v2/optionchain",
+                headers=headers,
+                json={"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I", "Expiry": self.levels["expiry"]},
+                timeout=10,
+            )
+            r.raise_for_status()
+            oc = r.json().get("data", {}).get("oc", {})
+            smap = {}
+            for k, legs in oc.items():
+                s = int(round(float(k)))
+                ce, pe = legs.get("ce") or {}, legs.get("pe") or {}
+                if ce.get("security_id") and pe.get("security_id"):
+                    smap[s] = {"ce_id": str(ce["security_id"]), "pe_id": str(pe["security_id"])}
+            erz_off = int(self.cfg.get("erz_offset", 100))
+            if not all(s in smap for s in (new_atm, new_atm - erz_off, new_atm + erz_off)):
+                return
+            old_atm = self.levels["atm_strike"]
+            inst = self.levels["instruments"]
+            inst["ATM_CE"].update({"security_id": smap[new_atm]["ce_id"], "strike": new_atm})
+            inst["ATM_PE"].update({"security_id": smap[new_atm]["pe_id"], "strike": new_atm})
+            inst["ERZ_CE"].update({"security_id": smap[new_atm - erz_off]["ce_id"], "strike": new_atm - erz_off})
+            inst["ERZ_PE"].update({"security_id": smap[new_atm + erz_off]["pe_id"], "strike": new_atm + erz_off})
+            self.levels["atm_strike"] = new_atm
+            self.levels["erz_ce_strike"] = new_atm - erz_off
+            self.levels["erz_pe_strike"] = new_atm + erz_off
+            self.sec_to_key = {v["security_id"]: k for k, v in inst.items()}
+            for k in ("ATM_CE", "ATM_PE", "ERZ_CE", "ERZ_PE"):
+                self.prices[k] = 0.0
+                self.cum_vols[k] = 0
+                self.cur_candles.pop(k, None)
+                self.hist_candles[k].clear()
+            self.ce_state = "IDLE"
+            self.pe_state = "IDLE"
+            self.sweep_atm_pe_low = None
+            self.sweep_atm_ce_low = None
+            self._force_resubscribe = True
+            self.trader.log_event("SYS", f"Intraday ATM Roll: {old_atm} -> {new_atm} (Synth Fut {live_fut:.2f})")
+        except Exception as e:
+            self.trader.log_event("WARN", f"ATM Roll failed: {e}")
+        finally:
+            self._rolling_atm = False
 
     def _in_trade_window(self) -> bool:
         now_hm = datetime.now(IST).strftime("%H:%M")
@@ -173,6 +221,7 @@ class SignalEngine:
         erz_width = float(self.cfg.get("erz_offset", 100)) * 2.0
         straddle_mid = round((atm_ce + atm_pe) / 2.0, 2)
         self.levels["straddle_mid"] = straddle_mid
+        self.levels["live_straddle_sum"] = round(atm_ce + atm_pe, 2)
         qty = int(self.cfg.get("lot_size", 65)) * int(self.cfg.get("lots", 1))
         use_abs = bool(self.cfg.get("use_absorption_filter", True))
         use_dyn_sl = bool(self.cfg.get("use_dynamic_sweep_sl", True))
@@ -311,17 +360,22 @@ class SignalEngine:
     async def run(self):
         self._running = True
         ws_url = f"wss://api-feed.dhan.co?version=2&token={self.cfg['dhan_access_token']}&clientId={self.cfg['dhan_client_id']}&authType=2"
-        sub_list = [{"ExchangeSegment": info["segment"], "SecurityId": info["security_id"]} for info in self.levels["instruments"].values()]
-        sub_msg = json.dumps({"RequestCode": 17, "InstrumentCount": len(sub_list), "InstrumentList": sub_list})
-
         while self._running:
             try:
+                sub_list = [{"ExchangeSegment": info["segment"], "SecurityId": info["security_id"]} for info in self.levels["instruments"].values()]
+                sub_msg = json.dumps({"RequestCode": 17, "InstrumentCount": len(sub_list), "InstrumentList": sub_list})
                 async with websockets.connect(ws_url, ping_interval=20, ping_timeout=10) as ws:
                     self.ws_connected = True
+                    self._force_resubscribe = False
                     await ws.send(sub_msg)
                     self.trader.log_event("SYS", "DhanHQ v2 Quote WebSocket connected (3m Absorption Filter ON)")
                     await asyncio.to_thread(self._poll_rest_fallback)
                     while self._running:
+                        if self._force_resubscribe:
+                            self._force_resubscribe = False
+                            sub_list = [{"ExchangeSegment": info["segment"], "SecurityId": info["security_id"]} for info in self.levels["instruments"].values()]
+                            await ws.send(json.dumps({"RequestCode": 17, "InstrumentCount": len(sub_list), "InstrumentList": sub_list}))
+                            await asyncio.to_thread(self._poll_rest_fallback)
                         try:
                             msg = await asyncio.wait_for(ws.recv(), timeout=25)
                             if isinstance(msg, bytes):
