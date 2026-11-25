@@ -184,27 +184,30 @@
         addLevelLine(L.erz_ce_iv, `ERZ CE IV (${L.erz_ce_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
         addLevelLine(200, 'ERZ Width (200)', '#f59e0b');
       } else if (selectedLeg === 'ATM_PE') {
-        document.getElementById('chartTitle').textContent = `${L.atm_strike} PE (Order Strike) — Mid: ₹${L.straddle_mid}`;
+        const sSum = L.live_straddle_sum || L.straddle_sum || '';
+        document.getElementById('chartTitle').textContent = `${L.atm_strike} PE (Order) — Mid: ₹${L.straddle_mid}${sSum ? ' | Sum: ₹' + sSum : ''}`;
         addLevelLine(L.straddle_mid, `Straddle Mid (${L.straddle_mid})`, '#3b82f6', LightweightCharts.LineStyle.Solid);
-        addLevelLine(L.bep_points, `BEP Pts (${L.bep_points})`, '#f59e0b');
         if (d.open_trade && d.open_trade.option_type === 'PE') {
           addLevelLine(d.open_trade.entry_price, 'ENTRY', '#10b981');
           addLevelLine(d.open_trade.sl_price, 'SL', '#ef4444');
           addLevelLine(d.open_trade.target_price, 'TARGET', '#3b82f6');
         }
       } else if (selectedLeg === 'ATM_CE') {
-        document.getElementById('chartTitle').textContent = `${L.atm_strike} CE (Order Strike) — Mid: ₹${L.straddle_mid}`;
+        const sSum = L.live_straddle_sum || L.straddle_sum || '';
+        document.getElementById('chartTitle').textContent = `${L.atm_strike} CE (Order) — Mid: ₹${L.straddle_mid}${sSum ? ' | Sum: ₹' + sSum : ''}`;
         addLevelLine(L.straddle_mid, `Straddle Mid (${L.straddle_mid})`, '#3b82f6', LightweightCharts.LineStyle.Solid);
-        addLevelLine(L.bep_points, `BEP Pts (${L.bep_points})`, '#f59e0b');
         if (d.open_trade && d.open_trade.option_type === 'CE') {
           addLevelLine(d.open_trade.entry_price, 'ENTRY', '#10b981');
           addLevelLine(d.open_trade.sl_price, 'SL', '#ef4444');
           addLevelLine(d.open_trade.target_price, 'TARGET', '#3b82f6');
         }
       } else if (selectedLeg === 'NIFTY_SPOT') {
-        document.getElementById('chartTitle').textContent = `NIFTY 50 Spot — BEP Band: ${L.bep_lower} to ${L.bep_upper}`;
+        document.getElementById('chartTitle').textContent = `NIFTY 50 — BEP: ${L.bep_lower}–${L.bep_upper} | Prev Mid: ${L.prev_day_mid || '--'}`;
         addLevelLine(L.bep_upper, `Upper BEP (${L.bep_upper})`, '#ef4444', LightweightCharts.LineStyle.Solid);
         addLevelLine(L.bep_lower, `Lower BEP (${L.bep_lower})`, '#10b981', LightweightCharts.LineStyle.Solid);
+        addLevelLine(L.wzr_pe_strike, `Upper WZR (${L.wzr_pe_strike})`, '#94a3b8', LightweightCharts.LineStyle.Dotted);
+        addLevelLine(L.wzr_ce_strike, `Lower WZR (${L.wzr_ce_strike})`, '#94a3b8', LightweightCharts.LineStyle.Dotted);
+        addLevelLine(L.prev_day_mid, `Prev Day Mid (${L.prev_day_mid})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
         addLevelLine(L.synthetic_future, `Synth Fut (${L.synthetic_future})`, '#3b82f6');
       }
     }
