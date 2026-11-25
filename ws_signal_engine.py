@@ -320,41 +320,58 @@ class SignalEngine:
         info = self.levels["instruments"].get(leg_key)
         if not info:
             return []
-        merged = {}
-        try:
-            headers = get_headers(self.cfg)
-            today_str = datetime.now(IST).strftime("%Y-%m-%d")
-            payload = {
-                "securityId": str(info["security_id"]),
-                "exchangeSegment": info["segment"],
-                "instrument": "INDEX" if info["segment"] == "IDX_I" else "OPTIDX",
-                "interval": "3",
-                "oi": False,
-                "fromDate": f"{today_str} 09:15:00",
-                "toDate": f"{today_str} 15:30:00",
-            }
-            r = requests.post("https://api.dhan.co/v2/charts/intraday", headers=headers, json=payload, timeout=10)
-            if r.status_code == 200:
-                d = r.json()
-                ts_list = d.get("timestamp") or []
-                for i in range(len(ts_list)):
-                    t = int(ts_list[i]) + 19800
-                    merged[t] = {
-                        "time": t,
-                        "open": float(d["open"][i]),
-                        "high": float(d["high"][i]),
-                        "low": float(d["low"][i]),
-                        "close": float(d["close"][i]),
-                    }
-        except Exception:
-            pass
-
+        if not hasattr(self, "_candle_cache"):
+            self._candle_cache = {}
+        now_ts = datetime.now(IST).timestamp()
+        ckey = f"{leg_key}:{info['security_id']}"
+        cached = self._candle_cache.get(ckey)
+        merged = dict(cached[1]) if (cached and now_ts - cached[0] < 30.0) else {}
+        if not merged:
+            try:
+                headers = get_headers(self.cfg)
+                today_str = datetime.now(IST).strftime("%Y-%m-%d")
+                payload = {
+                    "securityId": str(info["security_id"]),
+                    "exchangeSegment": info["segment"],
+                    "instrument": "INDEX" if info["segment"] == "IDX_I" else "OPTIDX",
+                    "interval": "3",
+                    "oi": False,
+                    "fromDate": f"{today_str} 09:15:00",
+                    "toDate": f"{today_str} 15:30:00",
+                }
+                r = requests.post(
+                    "https://api.dhan.co/v2/charts/intraday",
+                    headers=headers,
+                    json=payload,
+                    timeout=4,
+                )
+                if r.status_code == 200:
+                    d = r.json()
+                    ts_l = d.get("timestamp") or []
+                    op_l, hi_l = d.get("open") or [], d.get("high") or []
+                    lo_l, cl_l = d.get("low") or [], d.get("close") or []
+                    for i in range(min(len(ts_l), len(op_l), len(hi_l), len(lo_l), len(cl_l))):
+                        if None in (op_l[i], hi_l[i], lo_l[i], cl_l[i]):
+                            continue
+                        o, h, l, c = float(op_l[i]), float(hi_l[i]), float(lo_l[i]), float(cl_l[i])
+                        if min(o, h, l, c) <= 0:
+                            continue
+                        hm = datetime.fromtimestamp(int(ts_l[i]), tz=IST).strftime("%H:%M")
+                        if not ("09:15" <= hm <= "15:30"):
+                            continue
+                        t = int(ts_l[i]) + 19800
+                        merged[t] = {"time": t, "open": o, "high": h, "low": l, "close": c}
+                if merged:
+                    self._candle_cache[ckey] = (now_ts, dict(merged))
+            except Exception:
+                if cached:
+                    merged = dict(cached[1])
         for c in list(self.hist_candles.get(leg_key, [])):
-            merged[c.time] = c.to_dict()
+            if c.open > 0 and c.close > 0:
+                merged[c.time] = c.to_dict()
         cur = self.cur_candles.get(leg_key)
-        if cur:
+        if cur and cur.open > 0 and cur.close > 0:
             merged[cur.time] = cur.to_dict()
-
         return [merged[k] for k in sorted(merged.keys())]
 
     async def run(self):

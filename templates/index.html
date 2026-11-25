@@ -212,9 +212,12 @@
       }
     }
 
+    let chartCtrl = null;
     async function loadChartHistory(leg) {
       try {
-        const res = await fetch(`/api/candles/${leg}`);
+        if (chartCtrl) chartCtrl.abort();
+        chartCtrl = new AbortController();
+        const res = await fetch(`/api/candles/${leg}`, { signal: chartCtrl.signal });
         const data = await res.json();
         if (data.bars && data.bars.length > 0) {
           candleSeries.setData(data.bars);
