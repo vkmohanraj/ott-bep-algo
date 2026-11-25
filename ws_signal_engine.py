@@ -99,16 +99,23 @@ class SignalEngine:
                 self._on_3m_spot_close(c)
 
     def _on_3m_spot_close(self, spot_c: Candle3M):
-        bep_upper = self.levels["bep_upper"]
-        bep_lower = self.levels["bep_lower"]
+        bep_upper = float(self.levels["bep_upper"])
+        bep_lower = float(self.levels["bep_lower"])
         wzr_upper = float(self.levels.get("wzr_pe_strike", bep_upper))
         wzr_lower = float(self.levels.get("wzr_ce_strike", bep_lower))
+        buf = float(self.cfg.get("boundary_buffer_pts", 20.0))
         mult = float(self.cfg.get("sweep_vol_multiplier", 1.3))
         wzr_mult = max(1.5, mult)
         hm = datetime.now(IST).strftime("%H:%M")
 
-        up_bep = spot_c.high >= bep_upper and spot_c.close < bep_upper
-        up_wzr = (not up_bep) and hm >= "09:30" and spot_c.high >= wzr_upper and spot_c.close < wzr_upper
+        rng = max(0.01, spot_c.high - spot_c.low)
+        top_wick = spot_c.high - max(spot_c.open, spot_c.close)
+        bot_wick = min(spot_c.open, spot_c.close) - spot_c.low
+        bear_rej = (spot_c.close < spot_c.open) or (top_wick / rng >= 0.40)
+        bull_rej = (spot_c.close > spot_c.open) or (bot_wick / rng >= 0.40)
+
+        up_bep = (spot_c.high >= bep_upper - buf) and (spot_c.close < bep_upper) and bear_rej
+        up_wzr = (not up_bep) and hm >= "09:30" and (spot_c.high >= wzr_upper - buf) and (spot_c.close < wzr_upper) and bear_rej
         if up_bep or up_wzr:
             pe_hist = list(self.hist_candles["ATM_PE"])
             req_mult = mult if up_bep else wzr_mult
@@ -122,11 +129,13 @@ class SignalEngine:
             if vol_ok:
                 self.upper_bep_absorbed = True
                 self.sweep_atm_pe_low = round(pe_hist[-1].low - 2.0, 2)
+                lvl = bep_upper if up_bep else wzr_upper
+                tag = "Sweep" if spot_c.high >= lvl else f"Near-Rej (-{lvl - spot_c.high:.1f}p)"
                 zone = f"Upper BEP ({bep_upper})" if up_bep else f"Upper WZR ({wzr_upper:.0f})"
-                self.trader.log_event("ABSORB", f"3m {zone} Sweep ({spot_c.high:.1f}) closed inside ({spot_c.close:.1f}) | Vol {vol_ratio}x")
+                self.trader.log_event("ABSORB", f"3m {zone} {tag} ({spot_c.high:.1f}->{spot_c.close:.1f}) | Vol {vol_ratio}x")
 
-        dn_bep = spot_c.low <= bep_lower and spot_c.close > bep_lower
-        dn_wzr = (not dn_bep) and hm >= "09:30" and spot_c.low <= wzr_lower and spot_c.close > wzr_lower
+        dn_bep = (spot_c.low <= bep_lower + buf) and (spot_c.close > bep_lower) and bull_rej
+        dn_wzr = (not dn_bep) and hm >= "09:30" and (spot_c.low <= wzr_lower + buf) and (spot_c.close > wzr_lower) and bull_rej
         if dn_bep or dn_wzr:
             ce_hist = list(self.hist_candles["ATM_CE"])
             req_mult = mult if dn_bep else wzr_mult
@@ -140,8 +149,10 @@ class SignalEngine:
             if vol_ok:
                 self.lower_bep_absorbed = True
                 self.sweep_atm_ce_low = round(ce_hist[-1].low - 2.0, 2)
+                lvl = bep_lower if dn_bep else wzr_lower
+                tag = "Sweep" if spot_c.low <= lvl else f"Near-Rej (+{spot_c.low - lvl:.1f}p)"
                 zone = f"Lower BEP ({bep_lower})" if dn_bep else f"Lower WZR ({wzr_lower:.0f})"
-                self.trader.log_event("ABSORB", f"3m {zone} Sweep ({spot_c.low:.1f}) closed inside ({spot_c.close:.1f}) | Vol {vol_ratio}x")
+                self.trader.log_event("ABSORB", f"3m {zone} {tag} ({spot_c.low:.1f}->{spot_c.close:.1f}) | Vol {vol_ratio}x")
 
     def evaluate_strategy(self):
         spot = self.prices.get("NIFTY_SPOT", 0.0)
