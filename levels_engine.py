@@ -144,7 +144,9 @@ def compute_and_store_levels(cfg: dict) -> dict:
         timeout=15,
     )
     oc_resp.raise_for_status()
-    oc_map = oc_resp.json().get("data", {}).get("oc", {})
+    oc_data = oc_resp.json().get("data", {})
+    oc_map = oc_data.get("oc", {})
+    spot_ref = float(oc_data.get("last_price") or 0)
 
     strikes = {}
     for k, legs in oc_map.items():
@@ -166,14 +168,23 @@ def compute_and_store_levels(cfg: dict) -> dict:
         raise RuntimeError("Empty option chain strikes from Dhan API")
 
     min_gap = float(cfg.get("min_atm_gap", 25.0))
-    eligible = [(s, d) for s, d in strikes.items() if d["gap"] >= min_gap]
+    near_strikes = {s: d for s, d in strikes.items() if abs(s - spot_ref) <= 250} if spot_ref > 0 else strikes
+    pool = near_strikes or strikes
+    eligible = [(s, d) for s, d in pool.items() if d["gap"] >= min_gap]
     if eligible:
         atm_strike, atm_info = min(eligible, key=lambda x: x[1]["gap"])
     else:
-        atm_strike, atm_info = min(strikes.items(), key=lambda x: x[1]["gap"])
+        atm_strike, atm_info = min(pool.items(), key=lambda x: x[1]["gap"])
 
     ce_ohlc = fetch_prev_ohlc(headers, atm_info["ce_id"])
     pe_ohlc = fetch_prev_ohlc(headers, atm_info["pe_id"])
+    prelim_fut = atm_strike + (ce_ohlc["close"] - pe_ohlc["close"])
+    if abs(atm_strike - prelim_fut) > 100:
+        re_pool = {s: d for s, d in strikes.items() if abs(s - prelim_fut) <= 150} or strikes
+        re_elig = [(s, d) for s, d in re_pool.items() if d["gap"] >= min_gap]
+        atm_strike, atm_info = min(re_elig or re_pool.items(), key=lambda x: x[1]["gap"])
+        ce_ohlc = fetch_prev_ohlc(headers, atm_info["ce_id"])
+        pe_ohlc = fetch_prev_ohlc(headers, atm_info["pe_id"])
 
     all_8 = [
         ce_ohlc["open"], ce_ohlc["high"], ce_ohlc["low"], ce_ohlc["close"],
