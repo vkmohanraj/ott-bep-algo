@@ -79,6 +79,9 @@ class SignalEngine:
         if key not in self.hist_candles or price <= 0:
             return
         now = datetime.now(IST)
+        hm = now.strftime("%H:%M")
+        if hm < "09:15" or hm > "15:30":
+            return
         bucket = (now.hour * 60 + now.minute) // 3
         floored = now.replace(minute=(now.minute // 3) * 3, second=0, microsecond=0)
         ts_ist = int(floored.timestamp()) + 19800
@@ -98,37 +101,47 @@ class SignalEngine:
     def _on_3m_spot_close(self, spot_c: Candle3M):
         bep_upper = self.levels["bep_upper"]
         bep_lower = self.levels["bep_lower"]
+        wzr_upper = float(self.levels.get("wzr_pe_strike", bep_upper))
+        wzr_lower = float(self.levels.get("wzr_ce_strike", bep_lower))
         mult = float(self.cfg.get("sweep_vol_multiplier", 1.3))
+        wzr_mult = max(1.5, mult)
+        hm = datetime.now(IST).strftime("%H:%M")
 
-        if spot_c.high >= bep_upper and spot_c.close < bep_upper:
+        up_bep = spot_c.high >= bep_upper and spot_c.close < bep_upper
+        up_wzr = (not up_bep) and hm >= "09:30" and spot_c.high >= wzr_upper and spot_c.close < wzr_upper
+        if up_bep or up_wzr:
             pe_hist = list(self.hist_candles["ATM_PE"])
-            vol_ok, vol_ratio = True, 1.0
+            req_mult = mult if up_bep else wzr_mult
+            vol_ok, vol_ratio = False, 0.0
             if len(pe_hist) >= 3:
                 last_v = pe_hist[-1].volume
                 avg_v = sum(x.volume for x in pe_hist[-6:-1]) / max(1, len(pe_hist[-6:-1]))
                 if avg_v > 0:
                     vol_ratio = round(last_v / avg_v, 2)
-                    vol_ok = vol_ratio >= mult
+                    vol_ok = vol_ratio >= req_mult
             if vol_ok:
                 self.upper_bep_absorbed = True
-                if pe_hist:
-                    self.sweep_atm_pe_low = round(pe_hist[-1].low - 2.0, 2)
-                self.trader.log_event("ABSORB", f"3m Upper BEP Sweep ({spot_c.high:.1f} >= {bep_upper}) closed inside ({spot_c.close:.1f}) | Vol {vol_ratio}x")
+                self.sweep_atm_pe_low = round(pe_hist[-1].low - 2.0, 2)
+                zone = f"Upper BEP ({bep_upper})" if up_bep else f"Upper WZR ({wzr_upper:.0f})"
+                self.trader.log_event("ABSORB", f"3m {zone} Sweep ({spot_c.high:.1f}) closed inside ({spot_c.close:.1f}) | Vol {vol_ratio}x")
 
-        if spot_c.low <= bep_lower and spot_c.close > bep_lower:
+        dn_bep = spot_c.low <= bep_lower and spot_c.close > bep_lower
+        dn_wzr = (not dn_bep) and hm >= "09:30" and spot_c.low <= wzr_lower and spot_c.close > wzr_lower
+        if dn_bep or dn_wzr:
             ce_hist = list(self.hist_candles["ATM_CE"])
-            vol_ok, vol_ratio = True, 1.0
+            req_mult = mult if dn_bep else wzr_mult
+            vol_ok, vol_ratio = False, 0.0
             if len(ce_hist) >= 3:
                 last_v = ce_hist[-1].volume
                 avg_v = sum(x.volume for x in ce_hist[-6:-1]) / max(1, len(ce_hist[-6:-1]))
                 if avg_v > 0:
                     vol_ratio = round(last_v / avg_v, 2)
-                    vol_ok = vol_ratio >= mult
+                    vol_ok = vol_ratio >= req_mult
             if vol_ok:
                 self.lower_bep_absorbed = True
-                if ce_hist:
-                    self.sweep_atm_ce_low = round(ce_hist[-1].low - 2.0, 2)
-                self.trader.log_event("ABSORB", f"3m Lower BEP Sweep ({spot_c.low:.1f} <= {bep_lower}) closed inside ({spot_c.close:.1f}) | Vol {vol_ratio}x")
+                self.sweep_atm_ce_low = round(ce_hist[-1].low - 2.0, 2)
+                zone = f"Lower BEP ({bep_lower})" if dn_bep else f"Lower WZR ({wzr_lower:.0f})"
+                self.trader.log_event("ABSORB", f"3m {zone} Sweep ({spot_c.low:.1f}) closed inside ({spot_c.close:.1f}) | Vol {vol_ratio}x")
 
     def evaluate_strategy(self):
         spot = self.prices.get("NIFTY_SPOT", 0.0)
@@ -139,10 +152,16 @@ class SignalEngine:
         if min(spot, atm_ce, atm_pe, erz_ce, erz_pe) <= 0:
             return
 
-        erz_ce_iv = self.levels["erz_ce_iv"]
-        erz_pe_iv = self.levels["erz_pe_iv"]
+        atm_strike = float(self.levels["atm_strike"])
+        live_fut = round(atm_strike + (atm_ce - atm_pe), 2)
+        erz_ce_iv = round(max(10.0, live_fut - float(self.levels["erz_ce_strike"])), 2)
+        erz_pe_iv = round(max(10.0, float(self.levels["erz_pe_strike"]) - live_fut), 2)
+        self.levels["synthetic_future"] = live_fut
+        self.levels["erz_ce_iv"] = erz_ce_iv
+        self.levels["erz_pe_iv"] = erz_pe_iv
         erz_width = float(self.cfg.get("erz_offset", 100)) * 2.0
-        straddle_mid = self.levels["straddle_mid"]
+        straddle_mid = round((atm_ce + atm_pe) / 2.0, 2)
+        self.levels["straddle_mid"] = straddle_mid
         qty = int(self.cfg.get("lot_size", 65)) * int(self.cfg.get("lots", 1))
         use_abs = bool(self.cfg.get("use_absorption_filter", True))
         use_dyn_sl = bool(self.cfg.get("use_dynamic_sweep_sl", True))
