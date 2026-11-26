@@ -221,16 +221,19 @@
       try {
         if (chartCtrl) chartCtrl.abort();
         chartCtrl = new AbortController();
+        candleSeries.setData([]);
+        chart.priceScale('right').applyOptions({ autoScale: true });
         const res = await fetch(`/api/candles/${leg}`, { signal: chartCtrl.signal });
         const data = await res.json();
         if (data.bars && data.bars.length > 0) {
           candleSeries.setData(data.bars);
+          chart.priceScale('right').applyOptions({ autoScale: true });
           chart.timeScale().fitContent();
-        } else {
-          candleSeries.setData([]);
+          chart.timeScale().scrollToRealTime();
         }
         drawReferenceLines(latestSnapshot);
       } catch (err) {}
+    } catch (err) {}
     }
 
     function selectLeg(leg) {
