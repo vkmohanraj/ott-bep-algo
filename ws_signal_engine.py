@@ -196,6 +196,7 @@ class SignalEngine:
         pe_combo = max(float(self.levels.get("prev_erz_pe_iv") or 0), float(self.levels.get("today_erz_pe_iv") or 0))
         ce_floor = float(self.levels.get("prev_erz_ce_iv") or self.levels.get("erz_ce_iv") or 0)
         pe_unjammed = (ce_floor <= 0 or erz_ce < ce_floor)
+        tz_hi, tz_lo = float(self.levels.get("tz_high") or 0), float(self.levels.get("tz_low") or 0)
         tz_pe_bounce = getattr(self, "_tz_dn_retest", False) and spot < tz_lo and live_fut < tz_lo
         if not open_trade and pe_unjammed and (self.upper_bep_absorbed or (pe_combo > 0 and erz_pe > pe_combo and live_fut < atm_strike) or (tz_pe_bounce and pe_combo > 0 and erz_pe > pe_combo)) and self.pe_state != "TRIGGERED":
             pe_brk = round(ep_hist[-1].high, 2) if ep_hist else erz_pe
@@ -211,7 +212,6 @@ class SignalEngine:
         ce_combo = max(float(self.levels.get("prev_erz_ce_iv") or 0), float(self.levels.get("today_erz_ce_iv") or 0))
         pe_floor = float(self.levels.get("prev_erz_pe_iv") or self.levels.get("erz_pe_iv") or 0)
         ce_unjammed = (pe_floor <= 0 or erz_pe < pe_floor)
-        tz_hi, tz_lo = float(self.levels.get("tz_high") or 0), float(self.levels.get("tz_low") or 0)
         if tz_hi > 0 and spot > tz_hi: self._tz_up_broken = True
         if tz_lo > 0 and spot < tz_lo: self._tz_dn_broken = True
         if getattr(self, "_tz_up_broken", False) and tz_lo <= spot <= tz_hi: self._tz_up_retest = True
