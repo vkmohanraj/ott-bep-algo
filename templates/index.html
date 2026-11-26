@@ -154,24 +154,43 @@
       wickUpColor: '#10b981', wickDownColor: '#ef4444',
     });
 
-    function renderZones() {
+    let _lastZoneKey = "";
+      function renderZones(force = false) {
         const w = chartEl.clientWidth, h = chartEl.clientHeight;
         if (zoneCanvas.width !== w || zoneCanvas.height !== h) {
           zoneCanvas.width = w; zoneCanvas.height = h;
+          force = true;
         }
         const ctx = zoneCanvas.getContext('2d');
-        ctx.clearRect(0, 0, w, h);
-        if (selectedLeg !== 'NIFTY_SPOT' || !latestSnapshot || !latestSnapshot.levels) return;
+        if (selectedLeg !== 'NIFTY_SPOT' || !latestSnapshot || !latestSnapshot.levels) {
+          if (_lastZoneKey !== "NONE" || force) {
+            ctx.clearRect(0, 0, w, h);
+            _lastZoneKey = "NONE";
+          }
+          return;
+        }
         const L = latestSnapshot.levels;
         const tzMid = Number(L.tz_mid) || (L.prev_day_mid ? Math.round(Number(L.prev_day_mid) / 50) * 50 : 0);
         const tzLo = Number(L.tz_low) || (tzMid ? tzMid - 30 : 0);
         const tzHi = Number(L.tz_high) || (tzMid ? tzMid + 30 : 0);
         if (!tzLo || !tzHi) return;
+
         const yUp = candleSeries.priceToCoordinate(tzMid + 150);
         const yTzHi = candleSeries.priceToCoordinate(tzHi);
         const yTzLo = candleSeries.priceToCoordinate(tzLo);
         const yDn = candleSeries.priceToCoordinate(tzMid - 150);
+        const key = `${w}|${h}|${yUp}|${yTzHi}|${yTzLo}|${yDn}`;
+        if (!force && key === _lastZoneKey) return;
+        _lastZoneKey = key;
+
+        ctx.clearRect(0, 0, w, h);
         const plotW = Math.max(0, w - 62);
+        const plotH = Math.max(0, h - 26);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, plotW, plotH);
+        ctx.clip();
+
         if (yUp !== null && yTzHi !== null) {
           ctx.fillStyle = 'rgba(250, 204, 21, 0.18)';
           ctx.fillRect(0, Math.min(yUp, yTzHi), plotW, Math.abs(yTzHi - yUp));
@@ -189,31 +208,18 @@
         if (yDn !== null) { ctx.strokeStyle = 'rgba(234, 179, 8, 0.55)'; ctx.beginPath(); ctx.moveTo(0, yDn); ctx.lineTo(plotW, yDn); ctx.stroke(); }
         if (yTzHi !== null) { ctx.strokeStyle = 'rgba(148, 163, 184, 0.65)'; ctx.beginPath(); ctx.moveTo(0, yTzHi); ctx.lineTo(plotW, yTzHi); ctx.stroke(); }
         if (yTzLo !== null) { ctx.strokeStyle = 'rgba(148, 163, 184, 0.65)'; ctx.beginPath(); ctx.moveTo(0, yTzLo); ctx.lineTo(plotW, yTzLo); ctx.stroke(); }
+        ctx.restore();
       }
-      chart.timeScale().subscribeVisibleLogicalRangeChange(() => requestAnimationFrame(renderZones)); chart.subscribeCrosshairMove(() => requestAnimationFrame(renderZones));
+      (function trackZonesLoop() {
+        renderZones(false);
+        requestAnimationFrame(trackZonesLoop);
+      })();
       window.addEventListener('resize', () => {
         chart.applyOptions({ width: chartEl.clientWidth });
-        renderZones();
+        renderZones(true);
       });
 
-    function clearPriceLines() {
-      priceLines.forEach(pl => candleSeries.removePriceLine(pl));
-      priceLines = [];
-    }
-
-    function addLevelLine(price, title, color, style = LightweightCharts.LineStyle.Dashed) {
-      if (!price || price <= 0) return;
-      priceLines.push(candleSeries.createPriceLine({
-        price: Number(price),
-        color: color,
-        lineWidth: 2,
-        lineStyle: style,
-        axisLabelVisible: true,
-        title: title,
-      }));
-    }
-
-    function drawReferenceLines(d) {
+      function drawReferenceLines(d) {
         priceLines.forEach(l => candleSeries.removePriceLine(l));
         priceLines = [];
         if (!d || !d.levels) return;
