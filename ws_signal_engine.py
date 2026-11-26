@@ -189,9 +189,15 @@ class SignalEngine:
         if min(spot, atm_ce, atm_pe, erz_ce, erz_pe) <= 0:
             return
 
-        erz_off = float(self.cfg.get("erz_offset", 100))
-        self.levels["wzr_ce_strike"], self.levels["wzr_pe_strike"] = atm_strike - erz_off, atm_strike + erz_off
+        erz_off = float(self.cfg.get("erz_offset", 150))
+        wzr_off = float(self.cfg.get("wzr_offset", 300))
+        self.levels["wzr_ce_strike"], self.levels["wzr_pe_strike"] = atm_strike - wzr_off, atm_strike + wzr_off
         self.levels["synthetic_future"] = live_fut
+        self.levels["erz_total_range"] = round(erz_off * 2.0, 2)
+        if not getattr(self, "_open_fut_locked", False) and "09:15" <= now_hm <= "15:30":
+            self._open_fut_locked = True
+            self.levels["today_erz_ce_iv"] = round(max(10.0, live_fut - float(self.levels["erz_ce_strike"])), 2)
+            self.levels["today_erz_pe_iv"] = round(max(10.0, float(self.levels["erz_pe_strike"]) - live_fut), 2)
         self.levels["erz_ce_iv"] = round(max(10.0, live_fut - float(self.levels["erz_ce_strike"])), 2)
         self.levels["erz_pe_iv"] = round(max(10.0, float(self.levels["erz_pe_strike"]) - live_fut), 2)
         self.levels["straddle_mid"] = round((atm_ce + atm_pe) / 2.0, 2)
@@ -200,7 +206,8 @@ class SignalEngine:
         qty = int(self.cfg.get("lot_size", 65)) * int(self.cfg.get("lots", 1))
         ep_hist, ec_hist = list(self.hist_candles["ERZ_PE"]), list(self.hist_candles["ERZ_CE"])
 
-        if not open_trade and self.upper_bep_absorbed and self.pe_state != "TRIGGERED":
+        pe_combo = max(float(self.levels.get("prev_erz_pe_iv") or 0), float(self.levels.get("today_erz_pe_iv") or 0))
+        if not open_trade and (self.upper_bep_absorbed or (pe_combo > 0 and erz_pe > pe_combo and live_fut < atm_strike)) and self.pe_state != "TRIGGERED":
             pe_brk = round(ep_hist[-1].high, 2) if ep_hist else erz_pe
             self.pe_state, self.upper_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY PE"
             self.trader.log_event("SIGNAL", f"BUY PE! ORB Breakdown + ERZ PE ({erz_pe:.2f})")
@@ -211,7 +218,8 @@ class SignalEngine:
                 tgt_p = trade["target_price"] if trade else round(atm_pe + float(self.cfg.get("target_points", 60.0)), 2)
                 self.notifier.alert_signal("BUY PE", atm_leg["strike"], "PE", atm_pe, sl_p, tgt_p, qty, self.levels["erz_pe_strike"], erz_pe, pe_brk, spot, bool(trade))
 
-        if not open_trade and self.lower_bep_absorbed and self.ce_state != "TRIGGERED":
+        ce_combo = max(float(self.levels.get("prev_erz_ce_iv") or 0), float(self.levels.get("today_erz_ce_iv") or 0))
+        if not open_trade and (self.lower_bep_absorbed or (ce_combo > 0 and erz_ce > ce_combo and live_fut > atm_strike)) and self.ce_state != "TRIGGERED":
             ce_brk = round(ec_hist[-1].high, 2) if ec_hist else erz_ce
             self.ce_state, self.lower_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY CE"
             self.trader.log_event("SIGNAL", f"BUY CE! ORB Breakout + ERZ CE ({erz_ce:.2f})")

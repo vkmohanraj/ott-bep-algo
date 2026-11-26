@@ -177,11 +177,15 @@
       const L = d.levels;
       if (selectedLeg === 'ERZ_PE') {
         document.getElementById('chartTitle').textContent = `${L.erz_pe_strike} PE (ERZ Trigger) — IV: ₹${L.erz_pe_iv}`;
-        addLevelLine(L.erz_pe_iv, `ERZ PE IV (${L.erz_pe_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
+        addLevelLine(L.prev_erz_pe_iv || L.erz_pe_iv, `Yest Edge IV (${L.prev_erz_pe_iv || L.erz_pe_iv})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
+        addLevelLine(L.today_erz_pe_iv || L.erz_pe_iv, `Today Edge IV (${L.today_erz_pe_iv || L.erz_pe_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
+        if (L.erz_total_range) addLevelLine(L.erz_total_range, `Total Range (${L.erz_total_range})`, '#ef4444', LightweightCharts.LineStyle.Dotted);
         addLevelLine(200, 'ERZ Width (200)', '#f59e0b');
       } else if (selectedLeg === 'ERZ_CE') {
         document.getElementById('chartTitle').textContent = `${L.erz_ce_strike} CE (ERZ Trigger) — IV: ₹${L.erz_ce_iv}`;
-        addLevelLine(L.erz_ce_iv, `ERZ CE IV (${L.erz_ce_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
+        addLevelLine(L.prev_erz_ce_iv || L.erz_ce_iv, `Yest Edge IV (${L.prev_erz_ce_iv || L.erz_ce_iv})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
+        addLevelLine(L.today_erz_ce_iv || L.erz_ce_iv, `Today Edge IV (${L.today_erz_ce_iv || L.today_erz_ce_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
+        if (L.erz_total_range) addLevelLine(L.erz_total_range, `Total Range (${L.erz_total_range})`, '#ef4444', LightweightCharts.LineStyle.Dotted);
         addLevelLine(200, 'ERZ Width (200)', '#f59e0b');
       } else if (selectedLeg === 'ATM_PE') {
         const sSum = L.live_straddle_sum || L.straddle_sum || '';

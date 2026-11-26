@@ -92,7 +92,7 @@ def init_db(db_path: str):
             message TEXT
         )
     """)
-    for col_def in ("prev_day_mid REAL DEFAULT 0.0", "straddle_sum REAL DEFAULT 0.0"):
+    for col_def in ("prev_day_mid REAL DEFAULT 0.0", "straddle_sum REAL DEFAULT 0.0", "prev_erz_ce_iv REAL DEFAULT 0.0", "prev_erz_pe_iv REAL DEFAULT 0.0", "today_erz_ce_iv REAL DEFAULT 0.0", "today_erz_pe_iv REAL DEFAULT 0.0", "erz_total_range REAL DEFAULT 0.0"):
         try:
             cur.execute(f"ALTER TABLE daily_levels ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
@@ -241,6 +241,9 @@ def compute_and_store_levels(cfg: dict) -> dict:
     atm_pe_iv = round(max(0.0, atm_strike - synth_fut), 2)
     erz_ce_iv = round(max(0.0, synth_fut - erz_ce_strike), 2)
     erz_pe_iv = round(max(0.0, erz_pe_strike - synth_fut), 2)
+    prev_erz_ce_iv, prev_erz_pe_iv = erz_ce_iv, erz_pe_iv
+    today_erz_ce_iv, today_erz_pe_iv = erz_ce_iv, erz_pe_iv
+    erz_total_range = round(float(erz_off * 2), 2)
     wzr_ce_iv = round(max(0.0, synth_fut - wzr_ce_strike), 2)
     wzr_pe_iv = round(max(0.0, wzr_pe_strike - synth_fut), 2)
 
@@ -272,6 +275,11 @@ def compute_and_store_levels(cfg: dict) -> dict:
         "erz_pe_strike": erz_pe_strike,
         "erz_ce_iv": erz_ce_iv,
         "erz_pe_iv": erz_pe_iv,
+        "prev_erz_ce_iv": prev_erz_ce_iv,
+        "prev_erz_pe_iv": prev_erz_pe_iv,
+        "today_erz_ce_iv": today_erz_ce_iv,
+        "today_erz_pe_iv": today_erz_pe_iv,
+        "erz_total_range": erz_total_range,
         "wzr_ce_strike": wzr_ce_strike,
         "wzr_pe_strike": wzr_pe_strike,
         "wzr_ce_iv": wzr_ce_iv,
@@ -288,9 +296,9 @@ def compute_and_store_levels(cfg: dict) -> dict:
             straddle_mid, atm_ce_iv, atm_pe_iv,
             erz_ce_strike, erz_pe_strike, erz_ce_iv, erz_pe_iv,
             wzr_ce_strike, wzr_pe_strike, wzr_ce_iv, wzr_pe_iv,
-            instruments_json, created_at, prev_day_mid, straddle_sum
+            instruments_json, created_at, prev_day_mid, straddle_sum, prev_erz_ce_iv, prev_erz_pe_iv, today_erz_ce_iv, today_erz_pe_iv, erz_total_range
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
     """, (
         result["trade_date"], result["expiry"], result["atm_strike"], result["strike_gap"],
@@ -299,7 +307,7 @@ def compute_and_store_levels(cfg: dict) -> dict:
         result["erz_ce_strike"], result["erz_pe_strike"], result["erz_ce_iv"], result["erz_pe_iv"],
         result["wzr_ce_strike"], result["wzr_pe_strike"], result["wzr_ce_iv"], result["wzr_pe_iv"],
         json.dumps(instruments), datetime.now(IST).isoformat(),
-        result["prev_day_mid"], result["straddle_sum"],
+        result["prev_day_mid"], result["straddle_sum"], result["prev_erz_ce_iv"], result["prev_erz_pe_iv"], result["today_erz_ce_iv"], result["today_erz_pe_iv"], result["erz_total_range"],
     ))
     conn.commit()
     conn.close()
