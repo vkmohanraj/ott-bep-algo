@@ -136,6 +136,10 @@
     let priceLines = [];
 
     const chartEl = document.getElementById('chartContainer');
+      chartEl.style.position = 'relative';
+      const zoneCanvas = document.createElement('canvas');
+      zoneCanvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:1;';
+      chartEl.appendChild(zoneCanvas);
     const chart = LightweightCharts.createChart(chartEl, {
       layout: { background: { color: '#0b0f19' }, textColor: '#94a3b8' },
       grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
@@ -150,9 +154,41 @@
       wickUpColor: '#10b981', wickDownColor: '#ef4444',
     });
 
-    window.addEventListener('resize', () => {
-      chart.applyOptions({ width: chartEl.clientWidth });
-    });
+    function renderZones() {
+        const w = chartEl.clientWidth, h = chartEl.clientHeight;
+        if (zoneCanvas.width !== w || zoneCanvas.height !== h) {
+          zoneCanvas.width = w; zoneCanvas.height = h;
+        }
+        const ctx = zoneCanvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+        if (selectedLeg !== 'NIFTY_SPOT' || !latestSnapshot || !latestSnapshot.levels) return;
+        const L = latestSnapshot.levels;
+        const tzLo = Number(L.tz_low || 0), tzHi = Number(L.tz_high || 0);
+        const tzMid = Number(L.tz_mid || ((tzLo + tzHi) / 2));
+        if (!tzLo || !tzHi) return;
+        const yUp = candleSeries.priceToCoordinate(tzMid + 150);
+        const yTzHi = candleSeries.priceToCoordinate(tzHi);
+        const yTzLo = candleSeries.priceToCoordinate(tzLo);
+        const yDn = candleSeries.priceToCoordinate(tzMid - 150);
+        const plotW = Math.max(0, w - 62);
+        if (yUp !== null && yTzHi !== null) {
+          ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
+          ctx.fillRect(0, Math.min(yUp, yTzHi), plotW, Math.abs(yTzHi - yUp));
+        }
+        if (yTzHi !== null && yTzLo !== null) {
+          ctx.fillStyle = 'rgba(148, 163, 184, 0.26)';
+          ctx.fillRect(0, Math.min(yTzHi, yTzLo), plotW, Math.abs(yTzLo - yTzHi));
+        }
+        if (yTzLo !== null && yDn !== null) {
+          ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
+          ctx.fillRect(0, Math.min(yTzLo, yDn), plotW, Math.abs(yDn - yTzLo));
+        }
+      }
+      chart.timeScale().subscribeVisibleLogicalRangeChange(renderZones);
+      window.addEventListener('resize', () => {
+        chart.applyOptions({ width: chartEl.clientWidth });
+        renderZones();
+      });
 
     function clearPriceLines() {
       priceLines.forEach(pl => candleSeries.removePriceLine(pl));
@@ -229,7 +265,12 @@
         addLevelLine(L.wzr_ce_strike, `Lower WZR (${L.wzr_ce_strike})`, '#94a3b8', LightweightCharts.LineStyle.Dotted);
         addLevelLine(L.prev_day_mid, `Prev Day Mid (${L.prev_day_mid})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
         if (L.tz_high) addLevelLine(L.tz_high, `TZ High (${L.tz_high})`, '#94a3b8', LightweightCharts.LineStyle.Solid);
+        if (L.tz_mid) addLevelLine(L.tz_mid, `TZ Mid (${L.tz_mid})`, '#cbd5e1', LightweightCharts.LineStyle.Dotted);
         if (L.tz_low) addLevelLine(L.tz_low, `TZ Low (${L.tz_low})`, '#94a3b8', LightweightCharts.LineStyle.Solid);
+        if (L.tz_mid) {
+          addLevelLine(L.tz_mid + 150, `Upper Yellow (${L.tz_mid + 150})`, '#eab308', LightweightCharts.LineStyle.Solid);
+          addLevelLine(L.tz_mid - 150, `Lower Yellow (${L.tz_mid - 150})`, '#eab308', LightweightCharts.LineStyle.Solid);
+        }
         if (L.opt_r1) addLevelLine(L.opt_r1, `R1 (+CE Low ${L.opt_r1})`, '#22c55e', LightweightCharts.LineStyle.Dotted);
         if (L.opt_s1) addLevelLine(L.opt_s1, `S1 (-PE Low ${L.opt_s1})`, '#f43f5e', LightweightCharts.LineStyle.Dotted);
         addLevelLine(L.synthetic_future, `Synth Fut (${L.synthetic_future})`, '#3b82f6');
@@ -251,7 +292,7 @@
           chart.timeScale().fitContent();
           chart.timeScale().scrollToRealTime();
         }
-        drawReferenceLines(latestSnapshot);
+        drawReferenceLines(latestSnapshot); renderZones();
       } catch (err) {}
     }
 
@@ -282,7 +323,7 @@
 
       if (firstLoad) drawReferenceLines(d);
       if (d.live_bars && d.live_bars[selectedLeg]) {
-        candleSeries.update(d.live_bars[selectedLeg]);
+        candleSeries.update(d.live_bars[selectedLeg]); renderZones();
       }
 
       const wsB = document.getElementById('wsBadge');
