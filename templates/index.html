@@ -184,6 +184,11 @@
           ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
           ctx.fillRect(0, Math.min(yTzLo, yDn), plotW, Math.abs(yDn - yTzLo));
         }
+        ctx.lineWidth = 1;
+        if (yUp !== null) { ctx.strokeStyle = 'rgba(234, 179, 8, 0.55)'; ctx.beginPath(); ctx.moveTo(0, yUp); ctx.lineTo(plotW, yUp); ctx.stroke(); }
+        if (yDn !== null) { ctx.strokeStyle = 'rgba(234, 179, 8, 0.55)'; ctx.beginPath(); ctx.moveTo(0, yDn); ctx.lineTo(plotW, yDn); ctx.stroke(); }
+        if (yTzHi !== null) { ctx.strokeStyle = 'rgba(148, 163, 184, 0.65)'; ctx.beginPath(); ctx.moveTo(0, yTzHi); ctx.lineTo(plotW, yTzHi); ctx.stroke(); }
+        if (yTzLo !== null) { ctx.strokeStyle = 'rgba(148, 163, 184, 0.65)'; ctx.beginPath(); ctx.moveTo(0, yTzLo); ctx.lineTo(plotW, yTzLo); ctx.stroke(); }
       }
       chart.timeScale().subscribeVisibleLogicalRangeChange(renderZones);
       window.addEventListener('resize', () => {
@@ -259,21 +264,7 @@
           addLevelLine(d.open_trade.target_price, 'TARGET', '#3b82f6');
         }
       } else if (selectedLeg === 'NIFTY_SPOT') {
-        document.getElementById('chartTitle').textContent = `NIFTY 50 — BEP: ${L.bep_lower}–${L.bep_upper} | Prev Mid: ${L.prev_day_mid || '--'}`;
-        addLevelLine(L.bep_upper, `Upper BEP (${L.bep_upper})`, '#ef4444', LightweightCharts.LineStyle.Solid);
-        addLevelLine(L.bep_lower, `Lower BEP (${L.bep_lower})`, '#10b981', LightweightCharts.LineStyle.Solid);
-        addLevelLine(L.wzr_pe_strike, `Upper WZR (${L.wzr_pe_strike})`, '#94a3b8', LightweightCharts.LineStyle.Dotted);
-        addLevelLine(L.wzr_ce_strike, `Lower WZR (${L.wzr_ce_strike})`, '#94a3b8', LightweightCharts.LineStyle.Dotted);
-        addLevelLine(L.prev_day_mid, `Prev Day Mid (${L.prev_day_mid})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
-        const zMid = Number(L.tz_mid) || (L.prev_day_mid ? Math.round(Number(L.prev_day_mid) / 50) * 50 : 0);
-        const zHi = Number(L.tz_high) || (zMid ? zMid + 30 : 0);
-        const zLo = Number(L.tz_low) || (zMid ? zMid - 30 : 0);
-        if (zHi) addLevelLine(zHi, `TZ High (${zHi})`, '#94a3b8', LightweightCharts.LineStyle.Solid);
-        if (zMid) addLevelLine(zMid, `TZ Mid (${zMid})`, '#cbd5e1', LightweightCharts.LineStyle.Dotted);
-        if (zLo) addLevelLine(zLo, `TZ Low (${zLo})`, '#94a3b8', LightweightCharts.LineStyle.Solid);
-        if (zMid) {
-          addLevelLine(zMid + 150, `Upper Yellow (${zMid + 150})`, '#eab308', LightweightCharts.LineStyle.Solid);
-          addLevelLine(zMid - 150, `Lower Yellow (${zMid - 150})`, '#eab308', LightweightCharts.LineStyle.Solid);
+          document.getElementById('chartTitle').textContent = `NIFTY 50 — BEP: ${L.bep_lower}–${L.bep_upper} | TZ: ${L.tz_low || ''}–${L.tz_high || ''}`;
         }
         if (L.opt_r1) addLevelLine(L.opt_r1, `R1 (+CE Low ${L.opt_r1})`, '#22c55e', LightweightCharts.LineStyle.Dotted);
         if (L.opt_s1) addLevelLine(L.opt_s1, `S1 (-PE Low ${L.opt_s1})`, '#f43f5e', LightweightCharts.LineStyle.Dotted);
