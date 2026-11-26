@@ -196,22 +196,16 @@ def compute_and_store_levels(cfg: dict) -> dict:
     if not strikes:
         raise RuntimeError("Empty option chain strikes from Dhan API")
 
-    min_gap = float(cfg.get("min_atm_gap", 25.0))
     near_strikes = {s: d for s, d in strikes.items() if abs(s - spot_ref) <= 250} if spot_ref > 0 else strikes
     pool = near_strikes or strikes
-    eligible = [(s, d) for s, d in pool.items() if d["gap"] >= min_gap]
-    if eligible:
-        atm_strike, atm_info = min(eligible, key=lambda x: x[1]["gap"])
-    else:
-        atm_strike, atm_info = min(pool.items(), key=lambda x: x[1]["gap"])
+    atm_strike, atm_info = min(pool.items(), key=lambda x: x[1]["gap"])
 
     ce_ohlc = fetch_prev_ohlc(headers, atm_info["ce_id"])
     pe_ohlc = fetch_prev_ohlc(headers, atm_info["pe_id"])
     prelim_fut = atm_strike + (ce_ohlc["close"] - pe_ohlc["close"])
     if abs(atm_strike - prelim_fut) > 100:
         re_pool = {s: d for s, d in strikes.items() if abs(s - prelim_fut) <= 150} or strikes
-        re_elig = [(s, d) for s, d in re_pool.items() if d["gap"] >= min_gap]
-        atm_strike, atm_info = min(re_elig or re_pool.items(), key=lambda x: x[1]["gap"])
+        atm_strike, atm_info = min(re_pool.items(), key=lambda x: x[1]["gap"])
         ce_ohlc = fetch_prev_ohlc(headers, atm_info["ce_id"])
         pe_ohlc = fetch_prev_ohlc(headers, atm_info["pe_id"])
 
@@ -229,8 +223,12 @@ def compute_and_store_levels(cfg: dict) -> dict:
     except Exception:
         prev_day_mid = round(synth_fut, 2)
 
-    erz_off = int(cfg.get("erz_offset", 100))
-    wzr_off = int(cfg.get("wzr_offset", 250))
+    if cfg.get("dynamic_triangle_width", True):
+        erz_off = max(100, int(round(straddle_mid / 50.0) * 50))
+        wzr_off = max(200, int(round(straddle_sum / 50.0) * 50))
+    else:
+        erz_off = int(cfg.get("erz_offset", 150))
+        wzr_off = int(cfg.get("wzr_offset", 300))
 
     erz_ce_strike = atm_strike - erz_off
     erz_pe_strike = atm_strike + erz_off
