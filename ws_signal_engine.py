@@ -176,7 +176,7 @@ class SignalEngine:
         self._had_open_trade = bool(open_trade)
 
         atm_strike = float(self.levels["atm_strike"])
-        live_fut = round(atm_strike + (atm_ce - atm_pe), 2) if (atm_ce > 0 and atm_pe > 0) else spot
+        live_fut = float(round(atm_strike + (round(atm_ce) - round(atm_pe)))) if (atm_ce > 0 and atm_pe > 0) else float(round(spot))
         now_hm = datetime.now(IST).strftime("%H:%M")
 
         if min(spot, atm_ce, atm_pe, erz_ce, erz_pe) <= 0:
@@ -185,8 +185,8 @@ class SignalEngine:
         self.levels["synthetic_future"] = live_fut
         if not getattr(self, "_open_fut_locked", False) and "09:15" <= now_hm <= "15:30":
             self._open_fut_locked = True
-            self.levels["today_erz_ce_iv"] = round(max(10.0, live_fut - float(self.levels["erz_ce_strike"])), 2)
-            self.levels["today_erz_pe_iv"] = round(max(10.0, float(self.levels["erz_pe_strike"]) - live_fut), 2)
+            self.levels["today_erz_ce_iv"] = float(round(max(10.0, live_fut - float(self.levels["erz_ce_strike"]))))
+            self.levels["today_erz_pe_iv"] = float(round(max(10.0, float(self.levels["erz_pe_strike"]) - live_fut)))
         self.levels["straddle_mid"] = round((atm_ce + atm_pe) / 2.0, 2)
         self.levels["live_straddle_sum"] = round(atm_ce + atm_pe, 2)
 
@@ -196,7 +196,8 @@ class SignalEngine:
         pe_combo = max(float(self.levels.get("prev_erz_pe_iv") or 0), float(self.levels.get("today_erz_pe_iv") or 0))
         ce_floor = float(self.levels.get("prev_erz_ce_iv") or self.levels.get("erz_ce_iv") or 0)
         pe_unjammed = (ce_floor <= 0 or erz_ce < ce_floor)
-        if not open_trade and pe_unjammed and (self.upper_bep_absorbed or (pe_combo > 0 and erz_pe > pe_combo and live_fut < atm_strike)) and self.pe_state != "TRIGGERED":
+        tz_pe_bounce = getattr(self, "_tz_dn_retest", False) and spot < tz_lo and live_fut < tz_lo
+        if not open_trade and pe_unjammed and (self.upper_bep_absorbed or (pe_combo > 0 and erz_pe > pe_combo and live_fut < atm_strike) or (tz_pe_bounce and pe_combo > 0 and erz_pe > pe_combo)) and self.pe_state != "TRIGGERED":
             pe_brk = round(ep_hist[-1].high, 2) if ep_hist else erz_pe
             self.pe_state, self.upper_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY PE"
             self.trader.log_event("SIGNAL", f"BUY PE! ORB Breakdown + ERZ PE ({erz_pe:.2f})")
@@ -210,7 +211,13 @@ class SignalEngine:
         ce_combo = max(float(self.levels.get("prev_erz_ce_iv") or 0), float(self.levels.get("today_erz_ce_iv") or 0))
         pe_floor = float(self.levels.get("prev_erz_pe_iv") or self.levels.get("erz_pe_iv") or 0)
         ce_unjammed = (pe_floor <= 0 or erz_pe < pe_floor)
-        if not open_trade and ce_unjammed and (self.lower_bep_absorbed or (ce_combo > 0 and erz_ce > ce_combo and live_fut > atm_strike)) and self.ce_state != "TRIGGERED":
+        tz_hi, tz_lo = float(self.levels.get("tz_high") or 0), float(self.levels.get("tz_low") or 0)
+        if tz_hi > 0 and spot > tz_hi: self._tz_up_broken = True
+        if tz_lo > 0 and spot < tz_lo: self._tz_dn_broken = True
+        if getattr(self, "_tz_up_broken", False) and tz_lo <= spot <= tz_hi: self._tz_up_retest = True
+        if getattr(self, "_tz_dn_broken", False) and tz_lo <= spot <= tz_hi: self._tz_dn_retest = True
+        tz_ce_bounce = getattr(self, "_tz_up_retest", False) and spot > tz_hi and live_fut > tz_hi
+        if not open_trade and ce_unjammed and (self.lower_bep_absorbed or (ce_combo > 0 and erz_ce > ce_combo and live_fut > atm_strike) or (tz_ce_bounce and ce_combo > 0 and erz_ce > ce_combo)) and self.ce_state != "TRIGGERED":
             ce_brk = round(ec_hist[-1].high, 2) if ec_hist else erz_ce
             self.ce_state, self.lower_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY CE"
             self.trader.log_event("SIGNAL", f"BUY CE! ORB Breakout + ERZ CE ({erz_ce:.2f})")

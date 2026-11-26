@@ -228,6 +228,10 @@
         addLevelLine(L.wzr_pe_strike, `Upper WZR (${L.wzr_pe_strike})`, '#94a3b8', LightweightCharts.LineStyle.Dotted);
         addLevelLine(L.wzr_ce_strike, `Lower WZR (${L.wzr_ce_strike})`, '#94a3b8', LightweightCharts.LineStyle.Dotted);
         addLevelLine(L.prev_day_mid, `Prev Day Mid (${L.prev_day_mid})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
+        if (L.tz_high) addLevelLine(L.tz_high, `TZ High (${L.tz_high})`, '#94a3b8', LightweightCharts.LineStyle.Solid);
+        if (L.tz_low) addLevelLine(L.tz_low, `TZ Low (${L.tz_low})`, '#94a3b8', LightweightCharts.LineStyle.Solid);
+        if (L.opt_r1) addLevelLine(L.opt_r1, `R1 (+CE Low ${L.opt_r1})`, '#22c55e', LightweightCharts.LineStyle.Dotted);
+        if (L.opt_s1) addLevelLine(L.opt_s1, `S1 (-PE Low ${L.opt_s1})`, '#f43f5e', LightweightCharts.LineStyle.Dotted);
         addLevelLine(L.synthetic_future, `Synth Fut (${L.synthetic_future})`, '#3b82f6');
       }
     }
