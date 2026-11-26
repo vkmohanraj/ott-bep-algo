@@ -1,3 +1,4 @@
+import time
 import json
 import os
 import sqlite3
@@ -25,6 +26,16 @@ def load_config(path: str = "config.json") -> dict:
             pass
     return cfg
 
+
+
+def _safe_post(url, headers, json_payload):
+    for attempt in range(5):
+        time.sleep(1.15)
+        r = _safe_post(url, headers=headers, json=json_payload, timeout=15)
+        if r.status_code != 429:
+            return r
+        time.sleep(2.5 * (attempt + 1))
+    return r
 
 def get_headers(cfg: dict) -> dict:
     return {
@@ -114,7 +125,7 @@ def fetch_prev_ohlc(headers: dict, security_id: str) -> dict:
         "fromDate": from_date,
         "toDate": to_date,
     }
-    resp = requests.post(f"{DHAN_BASE}/charts/historical", headers=headers, json=payload, timeout=15)
+    resp = _safe_post(f"{DHAN_BASE}/charts/historical", headers=headers, json=payload, timeout=15)
     resp.raise_for_status()
     data = resp.json()
     return {
@@ -138,7 +149,7 @@ def fetch_spot_prev_ohlc(headers: dict) -> dict:
         "fromDate": from_date,
         "toDate": to_date,
     }
-    resp = requests.post(f"{DHAN_BASE}/charts/historical", headers=headers, json=payload, timeout=15)
+    resp = _safe_post(f"{DHAN_BASE}/charts/historical", headers=headers, json=payload, timeout=15)
     resp.raise_for_status()
     data = resp.json()
     return {
@@ -154,7 +165,7 @@ def compute_and_store_levels(cfg: dict) -> dict:
     headers = get_headers(cfg)
     today_str = datetime.now(IST).strftime("%Y-%m-%d")
 
-    exp_resp = requests.post(
+    exp_resp = _safe_post(
         f"{DHAN_BASE}/optionchain/expirylist",
         headers=headers,
         json={"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I"},
@@ -166,7 +177,7 @@ def compute_and_store_levels(cfg: dict) -> dict:
         raise RuntimeError("No NIFTY expiries returned by Dhan API")
     nearest_expiry = sorted(expiries)[0]
 
-    oc_resp = requests.post(
+    oc_resp = _safe_post(
         f"{DHAN_BASE}/optionchain",
         headers=headers,
         json={"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I", "Expiry": nearest_expiry},
