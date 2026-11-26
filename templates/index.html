@@ -138,7 +138,7 @@
     const chartEl = document.getElementById('chartContainer');
       chartEl.style.position = 'relative';
       const zoneCanvas = document.createElement('canvas');
-      zoneCanvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:1;';
+      zoneCanvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:10;';
       chartEl.appendChild(zoneCanvas);
     const chart = LightweightCharts.createChart(chartEl, {
       layout: { background: { color: '#0b0f19' }, textColor: '#94a3b8' },
@@ -173,15 +173,15 @@
         const yDn = candleSeries.priceToCoordinate(tzMid - 150);
         const plotW = Math.max(0, w - 62);
         if (yUp !== null && yTzHi !== null) {
-          ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
+          ctx.fillStyle = 'rgba(250, 204, 21, 0.18)';
           ctx.fillRect(0, Math.min(yUp, yTzHi), plotW, Math.abs(yTzHi - yUp));
         }
         if (yTzHi !== null && yTzLo !== null) {
-          ctx.fillStyle = 'rgba(148, 163, 184, 0.26)';
+          ctx.fillStyle = 'rgba(148, 163, 184, 0.30)';
           ctx.fillRect(0, Math.min(yTzHi, yTzLo), plotW, Math.abs(yTzLo - yTzHi));
         }
         if (yTzLo !== null && yDn !== null) {
-          ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
+          ctx.fillStyle = 'rgba(250, 204, 21, 0.18)';
           ctx.fillRect(0, Math.min(yTzLo, yDn), plotW, Math.abs(yDn - yTzLo));
         }
         ctx.lineWidth = 1;
@@ -190,7 +190,7 @@
         if (yTzHi !== null) { ctx.strokeStyle = 'rgba(148, 163, 184, 0.65)'; ctx.beginPath(); ctx.moveTo(0, yTzHi); ctx.lineTo(plotW, yTzHi); ctx.stroke(); }
         if (yTzLo !== null) { ctx.strokeStyle = 'rgba(148, 163, 184, 0.65)'; ctx.beginPath(); ctx.moveTo(0, yTzLo); ctx.lineTo(plotW, yTzLo); ctx.stroke(); }
       }
-      chart.timeScale().subscribeVisibleLogicalRangeChange(renderZones);
+      chart.timeScale().subscribeVisibleLogicalRangeChange(() => requestAnimationFrame(renderZones)); chart.subscribeCrosshairMove(() => requestAnimationFrame(renderZones));
       window.addEventListener('resize', () => {
         chart.applyOptions({ width: chartEl.clientWidth });
         renderZones();
@@ -287,7 +287,7 @@
           chart.timeScale().fitContent();
           chart.timeScale().scrollToRealTime();
         }
-        drawReferenceLines(latestSnapshot); renderZones();
+        drawReferenceLines(latestSnapshot); setTimeout(renderZones, 80); setTimeout(renderZones, 300);
       } catch (err) {}
     }
 
