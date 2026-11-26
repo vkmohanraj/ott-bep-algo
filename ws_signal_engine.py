@@ -147,133 +147,80 @@ class SignalEngine:
                 self._on_3m_spot_close(c)
 
     def _on_3m_spot_close(self, spot_c: Candle3M):
-        bep_upper = float(self.levels["bep_upper"])
-        bep_lower = float(self.levels["bep_lower"])
-        wzr_upper = float(self.levels.get("wzr_pe_strike", bep_upper))
-        wzr_lower = float(self.levels.get("wzr_ce_strike", bep_lower))
-        buf = float(self.cfg.get("boundary_buffer_pts", 20.0))
-        mult = float(self.cfg.get("sweep_vol_multiplier", 1.3))
-        wzr_mult = max(1.5, mult)
-        hm = datetime.now(IST).strftime("%H:%M")
+        bar_hm = datetime.fromtimestamp(spot_c.time - 19800, tz=IST).strftime("%H:%M")
+        if "09:15" <= bar_hm < "09:30":
+            oh, ol = getattr(self, "orb_high", None), getattr(self, "orb_low", None)
+            self.orb_high = spot_c.high if oh is None else max(oh, spot_c.high)
+            self.orb_low = spot_c.low if ol is None else min(ol, spot_c.low)
+            return
 
-        rng = max(0.01, spot_c.high - spot_c.low)
-        top_wick = spot_c.high - max(spot_c.open, spot_c.close)
-        bot_wick = min(spot_c.open, spot_c.close) - spot_c.low
-        bear_rej = (spot_c.close < spot_c.open) or (top_wick / rng >= 0.40)
-        bull_rej = (spot_c.close > spot_c.open) or (bot_wick / rng >= 0.40)
-
-        up_bep = (spot_c.high >= bep_upper - buf) and (spot_c.close < bep_upper) and bear_rej
-        up_wzr = (not up_bep) and hm >= "09:30" and (spot_c.high >= wzr_upper - buf) and (spot_c.close < wzr_upper) and bear_rej
-        if up_bep or up_wzr:
-            pe_hist = list(self.hist_candles["ATM_PE"])
-            req_mult = mult if up_bep else wzr_mult
-            vol_ok, vol_ratio = False, 0.0
-            if len(pe_hist) >= 3:
-                last_v = pe_hist[-1].volume
-                avg_v = sum(x.volume for x in pe_hist[-6:-1]) / max(1, len(pe_hist[-6:-1]))
-                if avg_v > 0:
-                    vol_ratio = round(last_v / avg_v, 2)
-                    vol_ok = vol_ratio >= req_mult
-            if vol_ok:
-                self.upper_bep_absorbed = True
-                self.sweep_atm_pe_low = round(pe_hist[-1].low - 2.0, 2)
-                lvl = bep_upper if up_bep else wzr_upper
-                tag = "Sweep" if spot_c.high >= lvl else f"Near-Rej (-{lvl - spot_c.high:.1f}p)"
-                zone = f"Upper BEP ({bep_upper})" if up_bep else f"Upper WZR ({wzr_upper:.0f})"
-                self.trader.log_event("ABSORB", f"3m {zone} {tag} ({spot_c.high:.1f}->{spot_c.close:.1f}) | Vol {vol_ratio}x")
-
-        dn_bep = (spot_c.low <= bep_lower + buf) and (spot_c.close > bep_lower) and bull_rej
-        dn_wzr = (not dn_bep) and hm >= "09:30" and (spot_c.low <= wzr_lower + buf) and (spot_c.close > wzr_lower) and bull_rej
-        if dn_bep or dn_wzr:
-            ce_hist = list(self.hist_candles["ATM_CE"])
-            req_mult = mult if dn_bep else wzr_mult
-            vol_ok, vol_ratio = False, 0.0
-            if len(ce_hist) >= 3:
-                last_v = ce_hist[-1].volume
-                avg_v = sum(x.volume for x in ce_hist[-6:-1]) / max(1, len(ce_hist[-6:-1]))
-                if avg_v > 0:
-                    vol_ratio = round(last_v / avg_v, 2)
-                    vol_ok = vol_ratio >= req_mult
-            if vol_ok:
-                self.lower_bep_absorbed = True
-                self.sweep_atm_ce_low = round(ce_hist[-1].low - 2.0, 2)
-                lvl = bep_lower if dn_bep else wzr_lower
-                tag = "Sweep" if spot_c.low <= lvl else f"Near-Rej (+{spot_c.low - lvl:.1f}p)"
-                zone = f"Lower BEP ({bep_lower})" if dn_bep else f"Lower WZR ({wzr_lower:.0f})"
-                self.trader.log_event("ABSORB", f"3m {zone} {tag} ({spot_c.low:.1f}->{spot_c.close:.1f}) | Vol {vol_ratio}x")
+        oh, ol = getattr(self, "orb_high", None), getattr(self, "orb_low", None)
+        if oh and spot_c.close > oh and spot_c.open <= oh:
+            self.lower_bep_absorbed, self.upper_bep_absorbed = True, False
+            self.trader.log_event("ABSORB", f"3m ORB High Breakout ({spot_c.close:.1f} > {oh:.1f})")
+        elif ol and spot_c.close < ol and spot_c.open >= ol:
+            self.upper_bep_absorbed, self.lower_bep_absorbed = True, False
+            self.trader.log_event("ABSORB", f"3m ORB Low Breakdown ({spot_c.close:.1f} < {ol:.1f})")
 
     def evaluate_strategy(self):
+        import threading
         spot = self.prices.get("NIFTY_SPOT", 0.0)
-        atm_ce = self.prices.get("ATM_CE", 0.0)
-        atm_pe = self.prices.get("ATM_PE", 0.0)
-        erz_ce = self.prices.get("ERZ_CE", 0.0)
-        erz_pe = self.prices.get("ERZ_PE", 0.0)
+        atm_ce, atm_pe = self.prices.get("ATM_CE", 0.0), self.prices.get("ATM_PE", 0.0)
+        erz_ce, erz_pe = self.prices.get("ERZ_CE", 0.0), self.prices.get("ERZ_PE", 0.0)
+        if spot <= 0:
+            return
+
+        open_trade = self.trader.get_open_trade()
+        if getattr(self, "_had_open_trade", False) and not open_trade:
+            self.ce_state, self.pe_state, self.active_signal = "IDLE", "IDLE", "WAITING"
+        self._had_open_trade = bool(open_trade)
+
+        atm_strike = float(self.levels["atm_strike"])
+        live_fut = round(atm_strike + (atm_ce - atm_pe), 2) if (atm_ce > 0 and atm_pe > 0) else spot
+        now_hm = datetime.now(IST).strftime("%H:%M")
+
+        if not open_trade and not self._rolling_atm and "09:15" <= now_hm <= "14:45" and abs(live_fut - atm_strike) >= 100.0:
+            new_atm = int(round(live_fut / 50.0) * 50)
+            if new_atm != int(atm_strike):
+                self._rolling_atm = True
+                threading.Thread(target=self._roll_intraday_atm, args=(new_atm, live_fut), daemon=True).start()
+                return
+
         if min(spot, atm_ce, atm_pe, erz_ce, erz_pe) <= 0:
             return
 
-        atm_strike = float(self.levels["atm_strike"])
-        live_fut = round(atm_strike + (atm_ce - atm_pe), 2)
-        erz_ce_iv = round(max(10.0, live_fut - float(self.levels["erz_ce_strike"])), 2)
-        erz_pe_iv = round(max(10.0, float(self.levels["erz_pe_strike"]) - live_fut), 2)
+        erz_off = float(self.cfg.get("erz_offset", 100))
+        self.levels["wzr_ce_strike"], self.levels["wzr_pe_strike"] = atm_strike - erz_off, atm_strike + erz_off
         self.levels["synthetic_future"] = live_fut
-        self.levels["erz_ce_iv"] = erz_ce_iv
-        self.levels["erz_pe_iv"] = erz_pe_iv
-        erz_width = float(self.cfg.get("erz_offset", 100)) * 2.0
-        straddle_mid = round((atm_ce + atm_pe) / 2.0, 2)
-        self.levels["straddle_mid"] = straddle_mid
+        self.levels["erz_ce_iv"] = round(max(10.0, live_fut - float(self.levels["erz_ce_strike"])), 2)
+        self.levels["erz_pe_iv"] = round(max(10.0, float(self.levels["erz_pe_strike"]) - live_fut), 2)
+        self.levels["straddle_mid"] = round((atm_ce + atm_pe) / 2.0, 2)
         self.levels["live_straddle_sum"] = round(atm_ce + atm_pe, 2)
+
         qty = int(self.cfg.get("lot_size", 65)) * int(self.cfg.get("lots", 1))
-        use_abs = bool(self.cfg.get("use_absorption_filter", True))
-        use_dyn_sl = bool(self.cfg.get("use_dynamic_sweep_sl", True))
+        ep_hist, ec_hist = list(self.hist_candles["ERZ_PE"]), list(self.hist_candles["ERZ_CE"])
 
-        ep_hist = list(self.hist_candles["ERZ_PE"])[-5:]
-        ec_hist = list(self.hist_candles["ERZ_CE"])[-5:]
-        pe_ref = round(sum(x.close for x in ep_hist) / len(ep_hist), 2) if len(ep_hist) >= 2 else erz_pe_iv
-        ce_ref = round(sum(x.close for x in ec_hist) / len(ec_hist), 2) if len(ec_hist) >= 2 else erz_ce_iv
-        pe_brk = max(pe_ref, ep_hist[-1].high) if ep_hist else erz_pe_iv
-        ce_brk = max(ce_ref, ec_hist[-1].high) if ec_hist else erz_ce_iv
-
-        if erz_pe < pe_ref and self.pe_state == "IDLE":
-            self.pe_state = "ARMED_OTM"
-            self.trader.log_event("ARM", f"ERZ PE ({self.levels['erz_pe_strike']} PE) compressed (< {pe_ref})")
+        if not open_trade and self.upper_bep_absorbed and self.pe_state != "TRIGGERED":
+            pe_brk = round(ep_hist[-1].high, 2) if ep_hist else erz_pe
+            self.pe_state, self.upper_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY PE"
+            self.trader.log_event("SIGNAL", f"BUY PE! ORB Breakdown + ERZ PE ({erz_pe:.2f})")
+            atm_leg = self.levels["instruments"]["ATM_PE"]
+            trade = self.trader.open_trade("BUY PE", "PE", atm_leg["strike"], atm_leg["security_id"], atm_pe) if self._in_trade_window() else None
             if self.notifier:
-                self.notifier.alert_armed("PE", self.levels["erz_pe_strike"], erz_pe, pe_ref, spot, self.levels)
-        elif self.pe_state == "ARMED_OTM" and erz_pe > pe_brk:
-            abs_ok = (not use_abs) or self.upper_bep_absorbed
-            if abs_ok and atm_pe >= straddle_mid:
-                self.pe_state = "TRIGGERED"
-                self.upper_bep_absorbed = False
-                self.active_signal = "BUY PE"
-                self.trader.log_event("SIGNAL", f"BUY PE TRIGGERED! ERZ PE slingshot ({erz_pe:.2f} > {pe_brk:.2f})")
-                in_win = self._in_trade_window()
-                atm_leg = self.levels["instruments"]["ATM_PE"]
-                custom_sl = self.sweep_atm_pe_low if use_dyn_sl else None
-                trade = self.trader.open_trade("BUY PE", "PE", atm_leg["strike"], atm_leg["security_id"], atm_pe, custom_sl=custom_sl) if in_win else None
-                sl_p = trade["sl_price"] if trade else round(max(1.0, atm_pe - float(self.cfg.get("sl_points", 25.0))), 2)
+                sl_p = trade["sl_price"] if trade else round(max(1.0, atm_pe - float(self.cfg.get("sl_points", 20.0))), 2)
                 tgt_p = trade["target_price"] if trade else round(atm_pe + float(self.cfg.get("target_points", 60.0)), 2)
-                if self.notifier:
-                    self.notifier.alert_signal("BUY PE", atm_leg["strike"], "PE", atm_pe, sl_p, tgt_p, qty, self.levels["erz_pe_strike"], erz_pe, pe_brk, spot, bool(trade))
+                self.notifier.alert_signal("BUY PE", atm_leg["strike"], "PE", atm_pe, sl_p, tgt_p, qty, self.levels["erz_pe_strike"], erz_pe, pe_brk, spot, bool(trade))
 
-        if erz_ce < ce_ref and self.ce_state == "IDLE":
-            self.ce_state = "ARMED_OTM"
-            self.trader.log_event("ARM", f"ERZ CE ({self.levels['erz_ce_strike']} CE) compressed (< {ce_ref})")
+        if not open_trade and self.lower_bep_absorbed and self.ce_state != "TRIGGERED":
+            ce_brk = round(ec_hist[-1].high, 2) if ec_hist else erz_ce
+            self.ce_state, self.lower_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY CE"
+            self.trader.log_event("SIGNAL", f"BUY CE! ORB Breakout + ERZ CE ({erz_ce:.2f})")
+            atm_leg = self.levels["instruments"]["ATM_CE"]
+            trade = self.trader.open_trade("BUY CE", "CE", atm_leg["strike"], atm_leg["security_id"], atm_ce) if self._in_trade_window() else None
             if self.notifier:
-                self.notifier.alert_armed("CE", self.levels["erz_ce_strike"], erz_ce, ce_ref, spot, self.levels)
-        elif self.ce_state == "ARMED_OTM" and erz_ce > ce_brk:
-            abs_ok = (not use_abs) or self.lower_bep_absorbed
-            if abs_ok and atm_ce >= straddle_mid:
-                self.ce_state = "TRIGGERED"
-                self.lower_bep_absorbed = False
-                self.active_signal = "BUY CE"
-                self.trader.log_event("SIGNAL", f"BUY CE TRIGGERED! ERZ CE slingshot ({erz_ce:.2f} > {ce_brk:.2f})")
-                in_win = self._in_trade_window()
-                atm_leg = self.levels["instruments"]["ATM_CE"]
-                custom_sl = self.sweep_atm_ce_low if use_dyn_sl else None
-                trade = self.trader.open_trade("BUY CE", "CE", atm_leg["strike"], atm_leg["security_id"], atm_ce, custom_sl=custom_sl) if in_win else None
-                sl_p = trade["sl_price"] if trade else round(max(1.0, atm_ce - float(self.cfg.get("sl_points", 25.0))), 2)
+                sl_p = trade["sl_price"] if trade else round(max(1.0, atm_ce - float(self.cfg.get("sl_points", 20.0))), 2)
                 tgt_p = trade["target_price"] if trade else round(atm_ce + float(self.cfg.get("target_points", 60.0)), 2)
-                if self.notifier:
-                    self.notifier.alert_signal("BUY CE", atm_leg["strike"], "CE", atm_ce, sl_p, tgt_p, qty, self.levels["erz_ce_strike"], erz_ce, ce_brk, spot, bool(trade))
+                self.notifier.alert_signal("BUY CE", atm_leg["strike"], "CE", atm_ce, sl_p, tgt_p, qty, self.levels["erz_ce_strike"], erz_ce, ce_brk, spot, bool(trade))
 
         self.trader.on_tick(self.prices)
 
