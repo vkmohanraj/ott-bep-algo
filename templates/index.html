@@ -163,8 +163,9 @@
         ctx.clearRect(0, 0, w, h);
         if (selectedLeg !== 'NIFTY_SPOT' || !latestSnapshot || !latestSnapshot.levels) return;
         const L = latestSnapshot.levels;
-        const tzLo = Number(L.tz_low || 0), tzHi = Number(L.tz_high || 0);
-        const tzMid = Number(L.tz_mid || ((tzLo + tzHi) / 2));
+        const tzMid = Number(L.tz_mid) || (L.prev_day_mid ? Math.round(Number(L.prev_day_mid) / 50) * 50 : 0);
+        const tzLo = Number(L.tz_low) || (tzMid ? tzMid - 30 : 0);
+        const tzHi = Number(L.tz_high) || (tzMid ? tzMid + 30 : 0);
         if (!tzLo || !tzHi) return;
         const yUp = candleSeries.priceToCoordinate(tzMid + 150);
         const yTzHi = candleSeries.priceToCoordinate(tzHi);
@@ -264,12 +265,15 @@
         addLevelLine(L.wzr_pe_strike, `Upper WZR (${L.wzr_pe_strike})`, '#94a3b8', LightweightCharts.LineStyle.Dotted);
         addLevelLine(L.wzr_ce_strike, `Lower WZR (${L.wzr_ce_strike})`, '#94a3b8', LightweightCharts.LineStyle.Dotted);
         addLevelLine(L.prev_day_mid, `Prev Day Mid (${L.prev_day_mid})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
-        if (L.tz_high) addLevelLine(L.tz_high, `TZ High (${L.tz_high})`, '#94a3b8', LightweightCharts.LineStyle.Solid);
-        if (L.tz_mid) addLevelLine(L.tz_mid, `TZ Mid (${L.tz_mid})`, '#cbd5e1', LightweightCharts.LineStyle.Dotted);
-        if (L.tz_low) addLevelLine(L.tz_low, `TZ Low (${L.tz_low})`, '#94a3b8', LightweightCharts.LineStyle.Solid);
-        if (L.tz_mid) {
-          addLevelLine(L.tz_mid + 150, `Upper Yellow (${L.tz_mid + 150})`, '#eab308', LightweightCharts.LineStyle.Solid);
-          addLevelLine(L.tz_mid - 150, `Lower Yellow (${L.tz_mid - 150})`, '#eab308', LightweightCharts.LineStyle.Solid);
+        const zMid = Number(L.tz_mid) || (L.prev_day_mid ? Math.round(Number(L.prev_day_mid) / 50) * 50 : 0);
+        const zHi = Number(L.tz_high) || (zMid ? zMid + 30 : 0);
+        const zLo = Number(L.tz_low) || (zMid ? zMid - 30 : 0);
+        if (zHi) addLevelLine(zHi, `TZ High (${zHi})`, '#94a3b8', LightweightCharts.LineStyle.Solid);
+        if (zMid) addLevelLine(zMid, `TZ Mid (${zMid})`, '#cbd5e1', LightweightCharts.LineStyle.Dotted);
+        if (zLo) addLevelLine(zLo, `TZ Low (${zLo})`, '#94a3b8', LightweightCharts.LineStyle.Solid);
+        if (zMid) {
+          addLevelLine(zMid + 150, `Upper Yellow (${zMid + 150})`, '#eab308', LightweightCharts.LineStyle.Solid);
+          addLevelLine(zMid - 150, `Lower Yellow (${zMid - 150})`, '#eab308', LightweightCharts.LineStyle.Solid);
         }
         if (L.opt_r1) addLevelLine(L.opt_r1, `R1 (+CE Low ${L.opt_r1})`, '#22c55e', LightweightCharts.LineStyle.Dotted);
         if (L.opt_s1) addLevelLine(L.opt_s1, `S1 (-PE Low ${L.opt_s1})`, '#f43f5e', LightweightCharts.LineStyle.Dotted);
