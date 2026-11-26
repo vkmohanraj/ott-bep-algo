@@ -179,12 +179,20 @@
         document.getElementById('chartTitle').textContent = `${L.erz_pe_strike} PE (ERZ Trigger) — IV: ₹${L.erz_pe_iv}`;
         addLevelLine(L.prev_erz_pe_iv || L.erz_pe_iv, `Yest Edge IV (${L.prev_erz_pe_iv || L.erz_pe_iv})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
         addLevelLine(L.today_erz_pe_iv || L.erz_pe_iv, `Today Edge IV (${L.today_erz_pe_iv || L.erz_pe_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
-        if (L.erz_total_range) addLevelLine(L.erz_total_range, `Total Range (${L.erz_total_range})`, '#ef4444', LightweightCharts.LineStyle.Dotted);
+        const totR = L.erz_total_range || Math.abs(L.erz_pe_strike - L.erz_ce_strike);
+        if (totR) addLevelLine(totR, `Total Range (${totR})`, '#ef4444', LightweightCharts.LineStyle.Dotted);
+        const erzMeta = L.instruments && L.instruments[selectedLeg];
+        if (erzMeta && erzMeta.prev_high) addLevelLine(erzMeta.prev_high, `Prev High (${erzMeta.prev_high})`, '#a855f7', LightweightCharts.LineStyle.Dashed);
+        if (erzMeta && erzMeta.prev_low) addLevelLine(erzMeta.prev_low, `Prev Low (${erzMeta.prev_low})`, '#3b82f6', LightweightCharts.LineStyle.Dashed);
       } else if (selectedLeg === 'ERZ_CE') {
         document.getElementById('chartTitle').textContent = `${L.erz_ce_strike} CE (ERZ Trigger) — IV: ₹${L.erz_ce_iv}`;
         addLevelLine(L.prev_erz_ce_iv || L.erz_ce_iv, `Yest Edge IV (${L.prev_erz_ce_iv || L.erz_ce_iv})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
         addLevelLine(L.today_erz_ce_iv || L.erz_ce_iv, `Today Edge IV (${L.today_erz_ce_iv || L.today_erz_ce_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
-        if (L.erz_total_range) addLevelLine(L.erz_total_range, `Total Range (${L.erz_total_range})`, '#ef4444', LightweightCharts.LineStyle.Dotted);
+        const totR = L.erz_total_range || Math.abs(L.erz_pe_strike - L.erz_ce_strike);
+        if (totR) addLevelLine(totR, `Total Range (${totR})`, '#ef4444', LightweightCharts.LineStyle.Dotted);
+        const erzMeta = L.instruments && L.instruments[selectedLeg];
+        if (erzMeta && erzMeta.prev_high) addLevelLine(erzMeta.prev_high, `Prev High (${erzMeta.prev_high})`, '#a855f7', LightweightCharts.LineStyle.Dashed);
+        if (erzMeta && erzMeta.prev_low) addLevelLine(erzMeta.prev_low, `Prev Low (${erzMeta.prev_low})`, '#3b82f6', LightweightCharts.LineStyle.Dashed);
       } else if (selectedLeg === 'ATM_PE') {
         const sSum = L.live_straddle_sum || L.straddle_sum || '';
         document.getElementById('chartTitle').textContent = `${L.atm_strike} PE (Order) — Mid: ₹${L.straddle_mid}${sSum ? ' | Sum: ₹' + sSum : ''}`;

@@ -249,8 +249,8 @@ def compute_and_store_levels(cfg: dict) -> dict:
         "NIFTY_SPOT": {"security_id": "13", "segment": "IDX_I", "label": "NIFTY 50"},
         "ATM_CE": {"security_id": atm_info["ce_id"], "segment": "NSE_FNO", "strike": atm_strike, "type": "CE", "iv": atm_ce_iv, "prev_high": ce_ohlc["high"], "prev_low": ce_ohlc["low"], "prev_close": ce_ohlc["close"]},
         "ATM_PE": {"security_id": atm_info["pe_id"], "segment": "NSE_FNO", "strike": atm_strike, "type": "PE", "iv": atm_pe_iv, "prev_high": pe_ohlc["high"], "prev_low": pe_ohlc["low"], "prev_close": pe_ohlc["close"]},
-        "ERZ_CE": {"security_id": strikes[erz_ce_strike]["ce_id"], "segment": "NSE_FNO", "strike": erz_ce_strike, "type": "CE", "iv": erz_ce_iv},
-        "ERZ_PE": {"security_id": strikes[erz_pe_strike]["pe_id"], "segment": "NSE_FNO", "strike": erz_pe_strike, "type": "PE", "iv": erz_pe_iv},
+        "ERZ_CE": {**{"security_id": strikes[erz_ce_strike]["ce_id"], "segment": "NSE_FNO", "strike": erz_ce_strike, "type": "CE", "iv": erz_ce_iv}, **{f"prev_{k}": v for k, v in fetch_prev_ohlc(headers, strikes[erz_ce_strike]["ce_id"]).items() if k in ("high", "low")}},
+        "ERZ_PE": {**{"security_id": strikes[erz_pe_strike]["pe_id"], "segment": "NSE_FNO", "strike": erz_pe_strike, "type": "PE", "iv": erz_pe_iv}, **{f"prev_{k}": v for k, v in fetch_prev_ohlc(headers, strikes[erz_pe_strike]["pe_id"]).items() if k in ("high", "low")}},
         "WZR_CE": {"security_id": strikes[wzr_ce_strike]["ce_id"], "segment": "NSE_FNO", "strike": wzr_ce_strike, "type": "CE", "iv": wzr_ce_iv},
         "WZR_PE": {"security_id": strikes[wzr_pe_strike]["pe_id"], "segment": "NSE_FNO", "strike": wzr_pe_strike, "type": "PE", "iv": wzr_pe_iv},
     }
