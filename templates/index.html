@@ -214,65 +214,65 @@
     }
 
     function drawReferenceLines(d) {
-      if (!d) return;
-      clearPriceLines();
-      const L = d.levels;
-      if (selectedLeg === 'ERZ_PE') {
-        document.getElementById('chartTitle').textContent = `${L.erz_pe_strike} PE (ERZ Trigger) — IV: ₹${L.erz_pe_iv}`;
-        addLevelLine(L.prev_erz_pe_iv || L.erz_pe_iv, `Yest Edge IV (${L.prev_erz_pe_iv || L.erz_pe_iv})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
-        addLevelLine(L.today_erz_pe_iv || L.erz_pe_iv, `Today Edge IV (${L.today_erz_pe_iv || L.erz_pe_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
-        const totR = L.erz_total_range || Math.abs(L.erz_pe_strike - L.erz_ce_strike);
-        if (totR) addLevelLine(totR, `Total Range (${totR})`, '#ef4444', LightweightCharts.LineStyle.Dotted);
-        const erzMeta = L.instruments && L.instruments[selectedLeg];
-        if (erzMeta && erzMeta.prev_high) addLevelLine(erzMeta.prev_high, `Prev High (${erzMeta.prev_high})`, '#a855f7', LightweightCharts.LineStyle.Dashed);
-        if (erzMeta && erzMeta.prev_low) addLevelLine(erzMeta.prev_low, `Prev Low (${erzMeta.prev_low})`, '#3b82f6', LightweightCharts.LineStyle.Dashed);
-      } else if (selectedLeg === 'ERZ_CE') {
-        document.getElementById('chartTitle').textContent = `${L.erz_ce_strike} CE (ERZ Trigger) — IV: ₹${L.erz_ce_iv}`;
-        addLevelLine(L.prev_erz_ce_iv || L.erz_ce_iv, `Yest Edge IV (${L.prev_erz_ce_iv || L.erz_ce_iv})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
-        addLevelLine(L.today_erz_ce_iv || L.erz_ce_iv, `Today Edge IV (${L.today_erz_ce_iv || L.today_erz_ce_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
-        const totR = L.erz_total_range || Math.abs(L.erz_pe_strike - L.erz_ce_strike);
-        if (totR) addLevelLine(totR, `Total Range (${totR})`, '#ef4444', LightweightCharts.LineStyle.Dotted);
-        const erzMeta = L.instruments && L.instruments[selectedLeg];
-        if (erzMeta && erzMeta.prev_high) addLevelLine(erzMeta.prev_high, `Prev High (${erzMeta.prev_high})`, '#a855f7', LightweightCharts.LineStyle.Dashed);
-        if (erzMeta && erzMeta.prev_low) addLevelLine(erzMeta.prev_low, `Prev Low (${erzMeta.prev_low})`, '#3b82f6', LightweightCharts.LineStyle.Dashed);
-      } else if (selectedLeg === 'ATM_PE') {
-        const sSum = L.live_straddle_sum || L.straddle_sum || '';
-        document.getElementById('chartTitle').textContent = `${L.atm_strike} PE (Order) — Mid: ₹${L.straddle_mid}${sSum ? ' | Sum: ₹' + sSum : ''}`;
-        addLevelLine(L.straddle_mid, `Common ATM Mid (${L.straddle_mid})`, '#3b82f6', LightweightCharts.LineStyle.Solid);
-        addLevelLine(L.bep_points, `H/L BEP (${L.bep_points})`, '#f59e0b', LightweightCharts.LineStyle.Solid);
-        addLevelLine(L.straddle_sum, `Straddle Sum (${L.straddle_sum})`, '#a855f7', LightweightCharts.LineStyle.Dotted);
-        const peMeta = L.instruments && L.instruments.ATM_PE;
-        if (peMeta && peMeta.prev_high) addLevelLine(peMeta.prev_high, `Prev PE High (${peMeta.prev_high})`, '#ef4444', LightweightCharts.LineStyle.Dashed);
-        if (peMeta && peMeta.prev_low) addLevelLine(peMeta.prev_low, `Prev PE Low (${peMeta.prev_low})`, '#10b981', LightweightCharts.LineStyle.Dashed);
-        if (d.open_trade && d.open_trade.option_type === 'PE') {
-          addLevelLine(d.open_trade.entry_price, 'ENTRY', '#10b981');
-          addLevelLine(d.open_trade.sl_price, 'SL', '#ef4444');
-          addLevelLine(d.open_trade.target_price, 'TARGET', '#3b82f6');
-        }
-      } else if (selectedLeg === 'ATM_CE') {
-        const sSum = L.live_straddle_sum || L.straddle_sum || '';
-        document.getElementById('chartTitle').textContent = `${L.atm_strike} CE (Order) — Mid: ₹${L.straddle_mid}${sSum ? ' | Sum: ₹' + sSum : ''}`;
-        addLevelLine(L.straddle_mid, `Common ATM Mid (${L.straddle_mid})`, '#3b82f6', LightweightCharts.LineStyle.Solid);
-        addLevelLine(L.bep_points, `H/L BEP (${L.bep_points})`, '#f59e0b', LightweightCharts.LineStyle.Solid);
-        addLevelLine(L.straddle_sum, `Straddle Sum (${L.straddle_sum})`, '#a855f7', LightweightCharts.LineStyle.Dotted);
-        const ceMeta = L.instruments && L.instruments.ATM_CE;
-        if (ceMeta && ceMeta.prev_high) addLevelLine(ceMeta.prev_high, `Prev CE High (${ceMeta.prev_high})`, '#ef4444', LightweightCharts.LineStyle.Dashed);
-        if (ceMeta && ceMeta.prev_low) addLevelLine(ceMeta.prev_low, `Prev CE Low (${ceMeta.prev_low})`, '#10b981', LightweightCharts.LineStyle.Dashed);
-        if (d.open_trade && d.open_trade.option_type === 'CE') {
-          addLevelLine(d.open_trade.entry_price, 'ENTRY', '#10b981');
-          addLevelLine(d.open_trade.sl_price, 'SL', '#ef4444');
-          addLevelLine(d.open_trade.target_price, 'TARGET', '#3b82f6');
-        }
-      } else if (selectedLeg === 'NIFTY_SPOT') {
-          document.getElementById('chartTitle').textContent = `NIFTY 50 — BEP: ${L.bep_lower}–${L.bep_upper} | TZ: ${L.tz_low || ''}–${L.tz_high || ''}`;
-        }
-        if (L.opt_r1) addLevelLine(L.opt_r1, `R1 (+CE Low ${L.opt_r1})`, '#22c55e', LightweightCharts.LineStyle.Dotted);
-        if (L.opt_s1) addLevelLine(L.opt_s1, `S1 (-PE Low ${L.opt_s1})`, '#f43f5e', LightweightCharts.LineStyle.Dotted);
-        addLevelLine(L.synthetic_future, `Synth Fut (${L.synthetic_future})`, '#3b82f6');
-      }
-    }
+        priceLines.forEach(l => candleSeries.removePriceLine(l));
+        priceLines = [];
+        if (!d || !d.levels) return;
+        const L = d.levels;
+        const addLevelLine = (price, title, color, style = LightweightCharts.LineStyle.Solid) => {
+          if (!price || Number(price) <= 0) return;
+          priceLines.push(candleSeries.createPriceLine({
+            price: Number(price),
+            color,
+            lineWidth: 2,
+            lineStyle: style,
+            axisLabelVisible: true,
+            title
+          }));
+        };
 
-    let chartCtrl = null;
+        if (selectedLeg === 'NIFTY_SPOT') {
+          const zMid = Number(L.tz_mid) || (L.prev_day_mid ? Math.round(Number(L.prev_day_mid) / 50) * 50 : 0);
+          const zLo = Number(L.tz_low) || (zMid ? zMid - 30 : 0);
+          const zHi = Number(L.tz_high) || (zMid ? zMid + 30 : 0);
+          document.getElementById('chartTitle').textContent = `NIFTY 50 — BEP: ${L.bep_lower}–${L.bep_upper} | TZ: ${zLo}–${zHi}`;
+        } else if (selectedLeg === 'ATM_PE') {
+          document.getElementById('chartTitle').textContent = `${L.atm_strike} PE (Order) — Mid: ₹${L.straddle_mid} | Sum: ₹${L.straddle_sum}`;
+          addLevelLine(L.straddle_mid, `Common ATM Mid (${L.straddle_mid})`, '#3b82f6', LightweightCharts.LineStyle.Solid);
+          addLevelLine(L.bep_points, `H/L BEP (${L.bep_points})`, '#f59e0b', LightweightCharts.LineStyle.Solid);
+          addLevelLine(L.straddle_sum, `Straddle Sum (${L.straddle_sum})`, '#a855f7', LightweightCharts.LineStyle.Dotted);
+          const peMeta = L.instruments && L.instruments.ATM_PE;
+          if (peMeta && peMeta.prev_high) addLevelLine(peMeta.prev_high, `Prev PE High (${peMeta.prev_high})`, '#ef4444', LightweightCharts.LineStyle.Dashed);
+          if (peMeta && peMeta.prev_low) addLevelLine(peMeta.prev_low, `Prev PE Low (${peMeta.prev_low})`, '#10b981', LightweightCharts.LineStyle.Dashed);
+        } else if (selectedLeg === 'ATM_CE') {
+          document.getElementById('chartTitle').textContent = `${L.atm_strike} CE (Order) — Mid: ₹${L.straddle_mid} | Sum: ₹${L.straddle_sum}`;
+          addLevelLine(L.straddle_mid, `Common ATM Mid (${L.straddle_mid})`, '#3b82f6', LightweightCharts.LineStyle.Solid);
+          addLevelLine(L.bep_points, `H/L BEP (${L.bep_points})`, '#f59e0b', LightweightCharts.LineStyle.Solid);
+          addLevelLine(L.straddle_sum, `Straddle Sum (${L.straddle_sum})`, '#a855f7', LightweightCharts.LineStyle.Dotted);
+          const ceMeta = L.instruments && L.instruments.ATM_CE;
+          if (ceMeta && ceMeta.prev_high) addLevelLine(ceMeta.prev_high, `Prev CE High (${ceMeta.prev_high})`, '#ef4444', LightweightCharts.LineStyle.Dashed);
+          if (ceMeta && ceMeta.prev_low) addLevelLine(ceMeta.prev_low, `Prev CE Low (${ceMeta.prev_low})`, '#10b981', LightweightCharts.LineStyle.Dashed);
+        } else if (selectedLeg === 'ERZ_PE') {
+          document.getElementById('chartTitle').textContent = `${L.erz_pe_strike} PE (ERZ Trigger) — IV: ₹${L.erz_pe_iv}`;
+          addLevelLine(L.prev_erz_pe_iv, `Yest Edge IV (${L.prev_erz_pe_iv})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
+          addLevelLine(L.today_erz_pe_iv, `Today Edge IV (${L.today_erz_pe_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
+          const totR = L.erz_total_range || Math.abs(L.erz_pe_strike - L.erz_ce_strike);
+          if (totR) addLevelLine(totR, `Total Range (${totR})`, '#ef4444', LightweightCharts.LineStyle.Dotted);
+          const erzMeta = L.instruments && L.instruments.ERZ_PE;
+          if (erzMeta && erzMeta.prev_high) addLevelLine(erzMeta.prev_high, `Prev High (${erzMeta.prev_high})`, '#a855f7', LightweightCharts.LineStyle.Dashed);
+          if (erzMeta && erzMeta.prev_low) addLevelLine(erzMeta.prev_low, `Prev Low (${erzMeta.prev_low})`, '#3b82f6', LightweightCharts.LineStyle.Dashed);
+        } else if (selectedLeg === 'ERZ_CE') {
+          document.getElementById('chartTitle').textContent = `${L.erz_ce_strike} CE (ERZ Trigger) — IV: ₹${L.erz_ce_iv}`;
+          addLevelLine(L.prev_erz_ce_iv, `Yest Edge IV (${L.prev_erz_ce_iv})`, '#f59e0b', LightweightCharts.LineStyle.Dashed);
+          addLevelLine(L.today_erz_ce_iv, `Today Edge IV (${L.today_erz_ce_iv})`, '#10b981', LightweightCharts.LineStyle.Solid);
+          const totR = L.erz_total_range || Math.abs(L.erz_pe_strike - L.erz_ce_strike);
+          if (totR) addLevelLine(totR, `Total Range (${totR})`, '#ef4444', LightweightCharts.LineStyle.Dotted);
+          const erzMeta = L.instruments && L.instruments.ERZ_CE;
+          if (erzMeta && erzMeta.prev_high) addLevelLine(erzMeta.prev_high, `Prev High (${erzMeta.prev_high})`, '#a855f7', LightweightCharts.LineStyle.Dashed);
+          if (erzMeta && erzMeta.prev_low) addLevelLine(erzMeta.prev_low, `Prev Low (${erzMeta.prev_low})`, '#3b82f6', LightweightCharts.LineStyle.Dashed);
+        }
+      }
+
+      let chartCtrl = null;
     async function loadChartHistory(leg) {
       try {
         if (chartCtrl) chartCtrl.abort();
