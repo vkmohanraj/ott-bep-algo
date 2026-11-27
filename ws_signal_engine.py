@@ -245,39 +245,53 @@ class SignalEngine:
 
         qty = int(self.cfg.get("lot_size", 65)) * int(self.cfg.get("lots", 1))
         ep_hist, ec_hist = list(self.hist_candles["ERZ_PE"]), list(self.hist_candles["ERZ_CE"])
+        tz_hi, tz_lo = float(self.levels.get("tz_high") or 0), float(self.levels.get("tz_low") or 0)
+
+        # Track Traffic Zone breakouts and retests cleanly before signal evaluation
+        if tz_hi > 0 and spot > tz_hi:
+            self._tz_up_broken = True
+        if tz_lo > 0 and spot < tz_lo:
+            self._tz_dn_broken = True
+        if getattr(self, "_tz_up_broken", False) and tz_lo <= spot <= tz_hi:
+            self._tz_up_retest = True
+        if getattr(self, "_tz_dn_broken", False) and tz_lo <= spot <= tz_hi:
+            self._tz_dn_retest = True
+
+        in_window = self._in_trade_window()
+        cooldown_ok = datetime.now(IST).timestamp() >= getattr(self, "_cooldown_until", 0)
 
         pe_combo = max(float(self.levels.get("prev_erz_pe_iv") or 0), float(self.levels.get("today_erz_pe_iv") or 0))
-        ce_floor = float(self.levels.get("prev_erz_ce_iv") or self.levels.get("erz_ce_iv") or 0)
-        pe_unjammed = (ce_floor <= 0 or erz_ce < ce_floor)
-        tz_hi, tz_lo = float(self.levels.get("tz_high") or 0), float(self.levels.get("tz_low") or 0)
-        tz_pe_bounce = getattr(self, "_tz_dn_retest", False) and spot < tz_lo and live_fut < tz_lo
-        if not open_trade and datetime.now(IST).timestamp() >= getattr(self, '_cooldown_until', 0) and pe_unjammed and (self.upper_bep_absorbed or (pe_combo > 0 and erz_pe > pe_combo and live_fut < atm_strike) or (tz_pe_bounce and pe_combo > 0 and erz_pe > pe_combo)) and self.pe_state != "TRIGGERED":
+        ce_combo = max(float(self.levels.get("prev_erz_ce_iv") or 0), float(self.levels.get("today_erz_ce_iv") or 0))
+
+        tz_pe_bounce = getattr(self, "_tz_dn_retest", False) and tz_lo > 0 and spot < tz_lo and live_fut < tz_lo
+        tz_ce_bounce = getattr(self, "_tz_up_retest", False) and tz_hi > 0 and spot > tz_hi and live_fut > tz_hi
+
+        pe_erz_break = (pe_combo > 0 and erz_pe > pe_combo and live_fut < atm_strike and (tz_lo <= 0 or spot < tz_lo))
+        ce_erz_break = (ce_combo > 0 and erz_ce > ce_combo and live_fut > atm_strike and (tz_hi <= 0 or spot > tz_hi))
+
+        if in_window and not open_trade and cooldown_ok and (self.upper_bep_absorbed or pe_erz_break or tz_pe_bounce) and self.pe_state != "TRIGGERED":
+            reason = "TZ Retest Breakdown" if tz_pe_bounce else ("3m ORB Breakdown" if self.upper_bep_absorbed else "ERZ PE Breakout")
             pe_brk = round(ep_hist[-1].high, 2) if ep_hist else erz_pe
             self.pe_state, self.upper_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY PE"
-            self.trader.log_event("SIGNAL", f"BUY PE! ORB Breakdown + ERZ PE ({erz_pe:.2f})")
+            self._tz_dn_broken, self._tz_dn_retest = False, False
+            self.trader.log_event("SIGNAL", f"BUY PE! {reason} | Spot {spot:.2f} | ERZ PE {erz_pe:.2f}")
             exec_leg = self._resolve_live_exec_leg("PE", spot)
             exec_ltp = exec_leg["ltp"]
-            trade = self.trader.open_trade("BUY PE", "PE", exec_leg["strike"], exec_leg["security_id"], exec_ltp) if self._in_trade_window() else None
+            trade = self.trader.open_trade("BUY PE", "PE", exec_leg["strike"], exec_leg["security_id"], exec_ltp)
             if self.notifier:
                 sl_p = trade["sl_price"] if trade else round(max(1.0, exec_ltp - float(self.cfg.get("sl_points", 20.0))), 2)
                 tgt_p = trade["target_price"] if trade else round(exec_ltp + float(self.cfg.get("target_points", 60.0)), 2)
                 self.notifier.alert_signal("BUY PE", exec_leg["strike"], "PE", exec_ltp, sl_p, tgt_p, qty, self.levels["erz_pe_strike"], erz_pe, pe_brk, spot, bool(trade))
 
-        ce_combo = max(float(self.levels.get("prev_erz_ce_iv") or 0), float(self.levels.get("today_erz_ce_iv") or 0))
-        pe_floor = float(self.levels.get("prev_erz_pe_iv") or self.levels.get("erz_pe_iv") or 0)
-        ce_unjammed = (pe_floor <= 0 or erz_pe < pe_floor)
-        if tz_hi > 0 and spot > tz_hi: self._tz_up_broken = True
-        if tz_lo > 0 and spot < tz_lo: self._tz_dn_broken = True
-        if getattr(self, "_tz_up_broken", False) and tz_lo <= spot <= tz_hi: self._tz_up_retest = True
-        if getattr(self, "_tz_dn_broken", False) and tz_lo <= spot <= tz_hi: self._tz_dn_retest = True
-        tz_ce_bounce = getattr(self, "_tz_up_retest", False) and spot > tz_hi and live_fut > tz_hi
-        if not open_trade and datetime.now(IST).timestamp() >= getattr(self, '_cooldown_until', 0) and ce_unjammed and (self.lower_bep_absorbed or (ce_combo > 0 and erz_ce > ce_combo and live_fut > atm_strike) or (tz_ce_bounce and ce_combo > 0 and erz_ce > ce_combo)) and self.ce_state != "TRIGGERED":
+        if in_window and not open_trade and cooldown_ok and (self.lower_bep_absorbed or ce_erz_break or tz_ce_bounce) and self.ce_state != "TRIGGERED":
+            reason = "TZ Retest Breakout" if tz_ce_bounce else ("3m ORB Breakout" if self.lower_bep_absorbed else "ERZ CE Breakout")
             ce_brk = round(ec_hist[-1].high, 2) if ec_hist else erz_ce
             self.ce_state, self.lower_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY CE"
-            self.trader.log_event("SIGNAL", f"BUY CE! ORB Breakout + ERZ CE ({erz_ce:.2f})")
+            self._tz_up_broken, self._tz_up_retest = False, False
+            self.trader.log_event("SIGNAL", f"BUY CE! {reason} | Spot {spot:.2f} | ERZ CE {erz_ce:.2f}")
             exec_leg = self._resolve_live_exec_leg("CE", spot)
             exec_ltp = exec_leg["ltp"]
-            trade = self.trader.open_trade("BUY CE", "CE", exec_leg["strike"], exec_leg["security_id"], exec_ltp) if self._in_trade_window() else None
+            trade = self.trader.open_trade("BUY CE", "CE", exec_leg["strike"], exec_leg["security_id"], exec_ltp)
             if self.notifier:
                 sl_p = trade["sl_price"] if trade else round(max(1.0, exec_ltp - float(self.cfg.get("sl_points", 20.0))), 2)
                 tgt_p = trade["target_price"] if trade else round(exec_ltp + float(self.cfg.get("target_points", 60.0)), 2)
