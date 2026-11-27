@@ -263,17 +263,22 @@ class SignalEngine:
         pe_combo = max(float(self.levels.get("prev_erz_pe_iv") or 0), float(self.levels.get("today_erz_pe_iv") or 0))
         ce_combo = max(float(self.levels.get("prev_erz_ce_iv") or 0), float(self.levels.get("today_erz_ce_iv") or 0))
 
+        tz_pe_break = (not getattr(self, "_tz_dn_traded", False)) and tz_lo > 0 and spot < tz_lo and live_fut < tz_lo
+        tz_ce_break = (not getattr(self, "_tz_up_traded", False)) and tz_hi > 0 and spot > tz_hi and live_fut > tz_hi
+
         tz_pe_bounce = getattr(self, "_tz_dn_retest", False) and tz_lo > 0 and spot < tz_lo and live_fut < tz_lo
         tz_ce_bounce = getattr(self, "_tz_up_retest", False) and tz_hi > 0 and spot > tz_hi and live_fut > tz_hi
 
         pe_erz_break = (pe_combo > 0 and erz_pe > pe_combo and live_fut < atm_strike and (tz_lo <= 0 or spot < tz_lo))
         ce_erz_break = (ce_combo > 0 and erz_ce > ce_combo and live_fut > atm_strike and (tz_hi <= 0 or spot > tz_hi))
 
-        if in_window and not open_trade and cooldown_ok and (self.upper_bep_absorbed or pe_erz_break or tz_pe_bounce) and self.pe_state != "TRIGGERED":
-            reason = "TZ Retest Breakdown" if tz_pe_bounce else ("3m ORB Breakdown" if self.upper_bep_absorbed else "ERZ PE Breakout")
+        if in_window and not open_trade and cooldown_ok and (self.upper_bep_absorbed or pe_erz_break or tz_pe_break or tz_pe_bounce) and self.pe_state != "TRIGGERED":
+            reason = "TZ Retest Breakdown" if tz_pe_bounce else ("TZ Breakdown" if tz_pe_break else ("3m ORB Breakdown" if self.upper_bep_absorbed else "ERZ PE Breakout"))
             pe_brk = round(ep_hist[-1].high, 2) if ep_hist else erz_pe
             self.pe_state, self.upper_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY PE"
-            self._tz_dn_broken, self._tz_dn_retest = False, False
+            self._tz_dn_traded = True
+            if tz_pe_bounce:
+                self._tz_dn_retest = False
             self.trader.log_event("SIGNAL", f"BUY PE! {reason} | Spot {spot:.2f} | ERZ PE {erz_pe:.2f}")
             exec_leg = self._resolve_live_exec_leg("PE", spot)
             exec_ltp = exec_leg["ltp"]
@@ -283,11 +288,13 @@ class SignalEngine:
                 tgt_p = trade["target_price"] if trade else round(exec_ltp + float(self.cfg.get("target_points", 60.0)), 2)
                 self.notifier.alert_signal("BUY PE", exec_leg["strike"], "PE", exec_ltp, sl_p, tgt_p, qty, self.levels["erz_pe_strike"], erz_pe, pe_brk, spot, bool(trade))
 
-        if in_window and not open_trade and cooldown_ok and (self.lower_bep_absorbed or ce_erz_break or tz_ce_bounce) and self.ce_state != "TRIGGERED":
-            reason = "TZ Retest Breakout" if tz_ce_bounce else ("3m ORB Breakout" if self.lower_bep_absorbed else "ERZ CE Breakout")
+        if in_window and not open_trade and cooldown_ok and (self.lower_bep_absorbed or ce_erz_break or tz_ce_break or tz_ce_bounce) and self.ce_state != "TRIGGERED":
+            reason = "TZ Retest Breakout" if tz_ce_bounce else ("TZ Breakout" if tz_ce_break else ("3m ORB Breakout" if self.lower_bep_absorbed else "ERZ CE Breakout"))
             ce_brk = round(ec_hist[-1].high, 2) if ec_hist else erz_ce
             self.ce_state, self.lower_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY CE"
-            self._tz_up_broken, self._tz_up_retest = False, False
+            self._tz_up_traded = True
+            if tz_ce_bounce:
+                self._tz_up_retest = False
             self.trader.log_event("SIGNAL", f"BUY CE! {reason} | Spot {spot:.2f} | ERZ CE {erz_ce:.2f}")
             exec_leg = self._resolve_live_exec_leg("CE", spot)
             exec_ltp = exec_leg["ltp"]
