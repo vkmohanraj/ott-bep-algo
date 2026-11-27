@@ -28,10 +28,11 @@ def load_config(path: str = "config.json") -> dict:
 
 
 
-def _safe_post(url, headers, json_payload):
+def _safe_post(url, *args, **kwargs):
+    kwargs.setdefault("timeout", 15)
     for attempt in range(5):
         time.sleep(1.15)
-        r = requests.post(url, headers=headers, json=json_payload, timeout=15)
+        r = requests.post(url, *args, **kwargs)
         if r.status_code != 429:
             return r
         time.sleep(2.5 * (attempt + 1))
