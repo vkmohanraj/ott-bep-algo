@@ -12,19 +12,7 @@ DHAN_BASE = "https://api.dhan.co/v2"
 
 def load_config(path: str = "config.json") -> dict:
     with open(path, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
-    token_path = cfg.get("token_file_path")
-    if token_path and os.path.exists(token_path):
-        try:
-            with open(token_path, "r", encoding="utf-8") as tf:
-                tdata = json.load(tf)
-                if tdata.get("access_token"):
-                    cfg["dhan_access_token"] = tdata["access_token"]
-                if tdata.get("client_id"):
-                    cfg["dhan_client_id"] = str(tdata["client_id"])
-        except Exception:
-            pass
-    return cfg
+        return json.load(f)
 
 
 
