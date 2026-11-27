@@ -225,6 +225,7 @@ class SignalEngine:
         open_trade = self.trader.get_open_trade()
         if getattr(self, "_had_open_trade", False) and not open_trade:
             self.ce_state, self.pe_state, self.active_signal = "IDLE", "IDLE", "WAITING"
+            self._cooldown_until = datetime.now(IST).timestamp() + float(self.cfg.get("reentry_cooldown_sec", 180))
         self._had_open_trade = bool(open_trade)
 
         atm_strike = float(self.levels["atm_strike"])
@@ -250,7 +251,7 @@ class SignalEngine:
         pe_unjammed = (ce_floor <= 0 or erz_ce < ce_floor)
         tz_hi, tz_lo = float(self.levels.get("tz_high") or 0), float(self.levels.get("tz_low") or 0)
         tz_pe_bounce = getattr(self, "_tz_dn_retest", False) and spot < tz_lo and live_fut < tz_lo
-        if not open_trade and pe_unjammed and (self.upper_bep_absorbed or (pe_combo > 0 and erz_pe > pe_combo and live_fut < atm_strike) or (tz_pe_bounce and pe_combo > 0 and erz_pe > pe_combo)) and self.pe_state != "TRIGGERED":
+        if not open_trade and datetime.now(IST).timestamp() >= getattr(self, '_cooldown_until', 0) and pe_unjammed and (self.upper_bep_absorbed or (pe_combo > 0 and erz_pe > pe_combo and live_fut < atm_strike) or (tz_pe_bounce and pe_combo > 0 and erz_pe > pe_combo)) and self.pe_state != "TRIGGERED":
             pe_brk = round(ep_hist[-1].high, 2) if ep_hist else erz_pe
             self.pe_state, self.upper_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY PE"
             self.trader.log_event("SIGNAL", f"BUY PE! ORB Breakdown + ERZ PE ({erz_pe:.2f})")
@@ -270,7 +271,7 @@ class SignalEngine:
         if getattr(self, "_tz_up_broken", False) and tz_lo <= spot <= tz_hi: self._tz_up_retest = True
         if getattr(self, "_tz_dn_broken", False) and tz_lo <= spot <= tz_hi: self._tz_dn_retest = True
         tz_ce_bounce = getattr(self, "_tz_up_retest", False) and spot > tz_hi and live_fut > tz_hi
-        if not open_trade and ce_unjammed and (self.lower_bep_absorbed or (ce_combo > 0 and erz_ce > ce_combo and live_fut > atm_strike) or (tz_ce_bounce and ce_combo > 0 and erz_ce > ce_combo)) and self.ce_state != "TRIGGERED":
+        if not open_trade and datetime.now(IST).timestamp() >= getattr(self, '_cooldown_until', 0) and ce_unjammed and (self.lower_bep_absorbed or (ce_combo > 0 and erz_ce > ce_combo and live_fut > atm_strike) or (tz_ce_bounce and ce_combo > 0 and erz_ce > ce_combo)) and self.ce_state != "TRIGGERED":
             ce_brk = round(ec_hist[-1].high, 2) if ec_hist else erz_ce
             self.ce_state, self.lower_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY CE"
             self.trader.log_event("SIGNAL", f"BUY CE! ORB Breakout + ERZ CE ({erz_ce:.2f})")
