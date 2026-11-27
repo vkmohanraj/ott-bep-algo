@@ -162,6 +162,58 @@ class SignalEngine:
             self.upper_bep_absorbed, self.lower_bep_absorbed = True, False
             self.trader.log_event("ABSORB", f"3m ORB Low Breakdown ({spot_c.close:.1f} < {ol:.1f})")
 
+    def _resolve_live_exec_leg(self, opt_type: str, spot: float) -> dict:
+        itm_steps = int(self.cfg.get("order_itm_steps", 0))
+        live_atm = int(round(spot / 50.0) * 50)
+        target_strike = live_atm - (itm_steps * 50) if opt_type == "CE" else live_atm + (itm_steps * 50)
+        exec_key = f"EXEC_{opt_type}"
+        fallback_leg = self.levels["instruments"][f"ATM_{opt_type}"]
+        fallback_ltp = float(self.prices.get(f"ATM_{opt_type}", 0.0))
+
+        try:
+            headers = get_headers(self.cfg)
+            r = requests.post(
+                "https://api.dhan.co/v2/optionchain",
+                headers=headers,
+                json={"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I", "Expiry": self.levels["expiry"]},
+                timeout=6,
+            )
+            if r.status_code == 200:
+                oc = r.json().get("data", {}).get("oc", {})
+                leg_data = None
+                for k, legs in oc.items():
+                    if int(round(float(k))) == target_strike:
+                        leg_data = legs.get(opt_type.lower()) or {}
+                        break
+                if leg_data and leg_data.get("security_id"):
+                    sec_id = str(leg_data["security_id"])
+                    ltp = float(leg_data.get("last_price") or 0.0)
+                    if ltp <= 0:
+                        lr = requests.post(
+                            "https://api.dhan.co/v2/marketfeed/ltp",
+                            headers=headers,
+                            json={"NSE_FNO": [int(sec_id)]},
+                            timeout=4,
+                        )
+                        if lr.status_code == 200:
+                            ltp = float(lr.json().get("data", {}).get("NSE_FNO", {}).get(sec_id, {}).get("last_price") or 0.0)
+                    if ltp > 0:
+                        leg_info = {
+                            "security_id": sec_id,
+                            "segment": "NSE_FNO",
+                            "strike": target_strike,
+                            "type": opt_type,
+                        }
+                        self.levels["instruments"][exec_key] = leg_info
+                        self.sec_to_key = {v["security_id"]: k for k, v in self.levels["instruments"].items()}
+                        self.prices[exec_key] = ltp
+                        self._force_resubscribe = True
+                        return {"strike": target_strike, "security_id": sec_id, "ltp": ltp}
+        except Exception as e:
+            self.trader.log_event("WARN", f"Live strike lookup fallback ({target_strike} {opt_type}): {e}")
+
+        return {"strike": fallback_leg["strike"], "security_id": fallback_leg["security_id"], "ltp": fallback_ltp}
+
     def evaluate_strategy(self):
         import threading
         spot = self.prices.get("NIFTY_SPOT", 0.0)
@@ -202,12 +254,13 @@ class SignalEngine:
             pe_brk = round(ep_hist[-1].high, 2) if ep_hist else erz_pe
             self.pe_state, self.upper_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY PE"
             self.trader.log_event("SIGNAL", f"BUY PE! ORB Breakdown + ERZ PE ({erz_pe:.2f})")
-            atm_leg = self.levels["instruments"]["ATM_PE"]
-            trade = self.trader.open_trade("BUY PE", "PE", atm_leg["strike"], atm_leg["security_id"], atm_pe) if self._in_trade_window() else None
+            exec_leg = self._resolve_live_exec_leg("PE", spot)
+            exec_ltp = exec_leg["ltp"]
+            trade = self.trader.open_trade("BUY PE", "PE", exec_leg["strike"], exec_leg["security_id"], exec_ltp) if self._in_trade_window() else None
             if self.notifier:
-                sl_p = trade["sl_price"] if trade else round(max(1.0, atm_pe - float(self.cfg.get("sl_points", 20.0))), 2)
-                tgt_p = trade["target_price"] if trade else round(atm_pe + float(self.cfg.get("target_points", 60.0)), 2)
-                self.notifier.alert_signal("BUY PE", atm_leg["strike"], "PE", atm_pe, sl_p, tgt_p, qty, self.levels["erz_pe_strike"], erz_pe, pe_brk, spot, bool(trade))
+                sl_p = trade["sl_price"] if trade else round(max(1.0, exec_ltp - float(self.cfg.get("sl_points", 20.0))), 2)
+                tgt_p = trade["target_price"] if trade else round(exec_ltp + float(self.cfg.get("target_points", 60.0)), 2)
+                self.notifier.alert_signal("BUY PE", exec_leg["strike"], "PE", exec_ltp, sl_p, tgt_p, qty, self.levels["erz_pe_strike"], erz_pe, pe_brk, spot, bool(trade))
 
         ce_combo = max(float(self.levels.get("prev_erz_ce_iv") or 0), float(self.levels.get("today_erz_ce_iv") or 0))
         pe_floor = float(self.levels.get("prev_erz_pe_iv") or self.levels.get("erz_pe_iv") or 0)
@@ -221,12 +274,13 @@ class SignalEngine:
             ce_brk = round(ec_hist[-1].high, 2) if ec_hist else erz_ce
             self.ce_state, self.lower_bep_absorbed, self.active_signal = "TRIGGERED", False, "BUY CE"
             self.trader.log_event("SIGNAL", f"BUY CE! ORB Breakout + ERZ CE ({erz_ce:.2f})")
-            atm_leg = self.levels["instruments"]["ATM_CE"]
-            trade = self.trader.open_trade("BUY CE", "CE", atm_leg["strike"], atm_leg["security_id"], atm_ce) if self._in_trade_window() else None
+            exec_leg = self._resolve_live_exec_leg("CE", spot)
+            exec_ltp = exec_leg["ltp"]
+            trade = self.trader.open_trade("BUY CE", "CE", exec_leg["strike"], exec_leg["security_id"], exec_ltp) if self._in_trade_window() else None
             if self.notifier:
-                sl_p = trade["sl_price"] if trade else round(max(1.0, atm_ce - float(self.cfg.get("sl_points", 20.0))), 2)
-                tgt_p = trade["target_price"] if trade else round(atm_ce + float(self.cfg.get("target_points", 60.0)), 2)
-                self.notifier.alert_signal("BUY CE", atm_leg["strike"], "CE", atm_ce, sl_p, tgt_p, qty, self.levels["erz_ce_strike"], erz_ce, ce_brk, spot, bool(trade))
+                sl_p = trade["sl_price"] if trade else round(max(1.0, exec_ltp - float(self.cfg.get("sl_points", 20.0))), 2)
+                tgt_p = trade["target_price"] if trade else round(exec_ltp + float(self.cfg.get("target_points", 60.0)), 2)
+                self.notifier.alert_signal("BUY CE", exec_leg["strike"], "CE", exec_ltp, sl_p, tgt_p, qty, self.levels["erz_ce_strike"], erz_ce, ce_brk, spot, bool(trade))
 
         self.trader.on_tick(self.prices)
 
@@ -365,7 +419,7 @@ class SignalEngine:
         realized_pnl = sum(t["pnl"] for t in trades if t["status"] == "CLOSED")
         unrealized_pnl = 0.0
         if open_trade:
-            cur_ltp = self.prices.get(f"ATM_{open_trade['option_type']}", open_trade["entry_price"])
+            cur_ltp = self.prices.get(f"EXEC_{open_trade['option_type']}") or self.prices.get(f"ATM_{open_trade['option_type']}", open_trade["entry_price"])
             unrealized_pnl = round((cur_ltp - open_trade["entry_price"]) * open_trade["qty"], 2)
         live_bars = {k: c.to_dict() for k, c in self.cur_candles.items()}
         return {

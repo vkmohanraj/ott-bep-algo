@@ -88,7 +88,7 @@ class PaperTrader:
         trade = self.get_open_trade()
         if not trade:
             return
-        ltp = prices.get(f"ATM_{trade['option_type']}", 0.0)
+        ltp = prices.get(f"EXEC_{trade['option_type']}") or prices.get(f"ATM_{trade['option_type']}", 0.0)
         if ltp <= 0:
             return
         if datetime.now(IST).strftime("%H:%M") >= self.cfg.get("squareoff_time", "15:15"):
