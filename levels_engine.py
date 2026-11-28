@@ -335,4 +335,16 @@ def get_today_levels(cfg: dict) -> dict:
         d = dict(row)
         d["instruments"] = json.loads(d["instruments_json"])
         return d
-    return compute_and_store_levels(cfg)
+    try:
+        return compute_and_store_levels(cfg)
+    except Exception as exc:
+        conn = sqlite3.connect(cfg["db_path"])
+        conn.row_factory = sqlite3.Row
+        fb = conn.execute("SELECT * FROM daily_levels ORDER BY trade_date DESC LIMIT 1").fetchone()
+        conn.close()
+        if fb:
+            print(f"[levels_engine] Dhan fetch failed ({exc}); falling back to stored levels for {fb['trade_date']}")
+            d = dict(fb)
+            d["instruments"] = json.loads(d["instruments_json"])
+            return d
+        raise
