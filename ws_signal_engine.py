@@ -444,7 +444,8 @@ class SignalEngine:
                 err_txt = str(e) or type(e).__name__
                 self.trader.log_event("WARN", f"WS reconnecting ({err_txt}); running REST LTP sync")
                 await asyncio.to_thread(self._poll_rest_fallback)
-                await asyncio.sleep(3)
+                self._ws_backoff = min(60, getattr(self, '_ws_backoff', 3) * 2) if datetime.now(IST).weekday() >= 5 or not ('09:00' <= datetime.now(IST).strftime('%H:%M') <= '15:35') else 5
+                await asyncio.sleep(self._ws_backoff)
 
     def get_snapshot(self) -> dict:
         open_trade = self.trader.get_open_trade()

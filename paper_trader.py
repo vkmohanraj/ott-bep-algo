@@ -17,11 +17,18 @@ class PaperTrader:
         return conn
 
     def log_event(self, level: str, message: str):
+        now_ts = datetime.now(IST).timestamp()
+        key = (level, message)
+        if level in ("SYS", "WARN") and getattr(self, "_last_log_key", None) == key and (now_ts - getattr(self, "_last_log_ts", 0)) < 60:
+            return
+        self._last_log_key = key
+        self._last_log_ts = now_ts
         conn = self._conn()
         conn.execute(
             "INSERT INTO signal_logs (ts, level, message) VALUES (?, ?, ?)",
             (datetime.now(IST).strftime("%H:%M:%S"), level, message),
         )
+        conn.execute("DELETE FROM signal_logs WHERE id <= (SELECT MAX(id) - 500 FROM signal_logs)")
         conn.commit()
         conn.close()
 
